@@ -1,0 +1,271 @@
+{
+  "agentspec_version": "26.1.0",
+  "component_type": "Flow",
+  "id": "email-drafting-flow",
+  "name": "Email Drafting Agent",
+  "description": "Generates personalized email drafts for a list of recipients based on the campaign context and objectives.",
+  "metadata": {
+    "cinatra": {
+      "type": "node",
+      "hitlScreens": [
+        "@cinatra-ai/reviewer-agent:output"
+      ],
+      "packageName": "@cinatra-ai/email-drafting-agent",
+      "packageVersion": "0.1.1"
+    }
+  },
+  "inputs": [
+    {
+      "title": "campaignId",
+      "type": "string",
+      "json_schema": {
+        "format": "uuid"
+      }
+    },
+    {
+      "title": "confirmedRecipients",
+      "type": "array",
+      "json_schema": {
+        "items": {
+          "type": "object"
+        }
+      }
+    },
+    {
+      "title": "agent_run_id",
+      "type": "string",
+      "default": ""
+    }
+  ],
+  "outputs": [
+    {
+      "title": "draftBundle",
+      "type": "object"
+    },
+    {
+      "title": "userResponse",
+      "type": "string"
+    }
+  ],
+  "start_node": {
+    "$component_ref": "start"
+  },
+  "nodes": [
+    {
+      "$component_ref": "start"
+    },
+    {
+      "$component_ref": "draft"
+    },
+    {
+      "$component_ref": "approval_gate"
+    },
+    {
+      "$component_ref": "end"
+    }
+  ],
+  "control_flow_connections": [
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "start_to_draft",
+      "from_node": {
+        "$component_ref": "start"
+      },
+      "to_node": {
+        "$component_ref": "draft"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "draft_to_approval_gate",
+      "from_node": {
+        "$component_ref": "draft"
+      },
+      "to_node": {
+        "$component_ref": "approval_gate"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "approval_gate_to_end",
+      "from_node": {
+        "$component_ref": "approval_gate"
+      },
+      "to_node": {
+        "$component_ref": "end"
+      }
+    }
+  ],
+  "data_flow_connections": [
+    {
+      "component_type": "DataFlowEdge",
+      "name": "start_to_draft_campaignId",
+      "source_node": {
+        "$component_ref": "start"
+      },
+      "source_output": "campaignId",
+      "destination_node": {
+        "$component_ref": "draft"
+      },
+      "destination_input": "campaignId"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "start_to_draft_confirmedRecipients",
+      "source_node": {
+        "$component_ref": "start"
+      },
+      "source_output": "confirmedRecipients",
+      "destination_node": {
+        "$component_ref": "draft"
+      },
+      "destination_input": "confirmedRecipients"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "start_to_draft_agent_run_id",
+      "source_node": {
+        "$component_ref": "start"
+      },
+      "source_output": "agent_run_id",
+      "destination_node": {
+        "$component_ref": "draft"
+      },
+      "destination_input": "agent_run_id"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "draft_to_end_draftBundle",
+      "source_node": {
+        "$component_ref": "draft"
+      },
+      "source_output": "draftBundle",
+      "destination_node": {
+        "$component_ref": "end"
+      },
+      "destination_input": "draftBundle"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "approval_gate_to_end_userResponse",
+      "source_node": {
+        "$component_ref": "approval_gate"
+      },
+      "source_output": "userResponse",
+      "destination_node": {
+        "$component_ref": "end"
+      },
+      "destination_input": "userResponse"
+    }
+  ],
+  "$referenced_components": {
+    "start": {
+      "component_type": "StartNode",
+      "id": "start",
+      "name": "Inputs",
+      "metadata": {
+        "cinatra": {
+          "required": [
+            "campaignId"
+          ],
+          "hidden": [
+            "campaignId",
+            "confirmedRecipients",
+            "agent_run_id"
+          ]
+        }
+      },
+      "inputs": [
+        {
+          "title": "campaignId",
+          "type": "string",
+          "json_schema": {
+            "format": "uuid"
+          }
+        },
+        {
+          "title": "confirmedRecipients",
+          "type": "array",
+          "json_schema": {
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "title": "agent_run_id",
+          "type": "string",
+          "default": ""
+        }
+      ]
+    },
+    "draft": {
+      "component_type": "ApiNode",
+      "id": "draft",
+      "name": "Draft emails",
+      "url": "{{CINATRA_BASE_URL}}/api/llm-bridge",
+      "http_method": "POST",
+      "data": {
+        "system": "You are an email drafting agent. Generate exactly one personalized initial outreach email per recipient in JSON format: {\"draftedEmails\":[{\"recipientId\":\"<contactId>\",\"recipientName\":\"<name>\",\"recipientEmail\":\"<email>\",\"subject\":\"<subject>\",\"body\":\"<body>\"}],\"summary\":\"<one sentence summary>\"}. Do not send email — this agent only drafts.",
+        "user": "Execute the email drafting task now and return the result as JSON.\nInputs:\n- campaignId: {{ campaignId }}\n- confirmedRecipients: {{ confirmedRecipients }}",
+        "agent_id": "email-drafting",
+        "agent_run_id": "{{ agent_run_id }}",
+        "cinatra_llm": {
+          "preferredProvider": "openai",
+          "preferredModel": "gpt-5.5"
+        }
+      },
+      "outputs": [
+        {
+          "title": "draftBundle",
+          "type": "object",
+          "json_schema": {
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      ],
+      "metadata": {
+        "cinatra": {
+          "riskClass": "draft_create",
+          "requiresApproval": false
+        }
+      }
+    },
+    "end": {
+      "component_type": "EndNode",
+      "id": "end",
+      "name": "End",
+      "outputs": [
+        {
+          "title": "draftBundle",
+          "type": "object"
+        },
+        {
+          "title": "userResponse",
+          "type": "string"
+        }
+      ]
+    },
+    "approval_gate": {
+      "component_type": "InputMessageNode",
+      "id": "approval_gate",
+      "name": "Review and approve",
+      "metadata": {
+        "cinatra": {
+          "riskClass": "approval",
+          "requiresApproval": true,
+          "renderer": "@cinatra-ai/reviewer-agent:drafts-output",
+          "a2uiSurfaceId": "reviewer:approval-gate:input"
+        }
+      },
+      "outputs": [
+        {
+          "title": "userResponse",
+          "type": "string"
+        }
+      ]
+    }
+  }
+}
