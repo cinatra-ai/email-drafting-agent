@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output (tsc outDir)
+dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# npm pack output
+*.tgz
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
