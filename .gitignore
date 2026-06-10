@@ -24,3 +24,6 @@ coverage/
 
 # OS files
 .DS_Store
+
+# Internal planning notes (owner policy: local-only, untracked)
+.planning/
