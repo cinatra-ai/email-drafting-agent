@@ -2,6 +2,10 @@
   "name": "@cinatra-ai/email-drafting-agent",
   "version": "0.1.0",
   "license": "Apache-2.0",
+  "files": [
+    "cinatra",
+    "skills"
+  ],
   "description": "Generates personalized initial emails for every recipient.",
   "type": "module",
   "cinatra": {
