@@ -36,6 +36,24 @@
     "agentDependencies": {
       "@cinatra-ai/reviewer-agent": "^0.1.0",
       "@cinatra-ai/auditor-agent": "^0.1.1"
-    }
+    },
+    "fieldRenderers": [
+      {
+        "id": "@cinatra-ai/email-drafting-agent:output",
+        "kind": "email-drafts-review",
+        "priority": 80,
+        "a2uiTranslator": "drafts-output"
+      },
+      {
+        "id": "@cinatra-ai/email-drafting-agent:email-drafts-review",
+        "kind": "email-drafts-review",
+        "priority": 80
+      },
+      {
+        "id": "@cinatra-ai/email-drafting-agent:follow-up-cadence",
+        "kind": "follow-up-cadence",
+        "priority": 90
+      }
+    ]
   }
 }
