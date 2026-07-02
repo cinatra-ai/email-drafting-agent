@@ -10,8 +10,7 @@
       "hitlScreens": [
         "@cinatra-ai/reviewer-agent:output"
       ],
-      "packageName": "@cinatra-ai/email-drafting-agent",
-      "packageVersion": "0.1.0"
+      "packageName": "@cinatra-ai/email-drafting-agent"
     }
   },
   "inputs": [
