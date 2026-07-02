@@ -54,6 +54,7 @@
         "kind": "follow-up-cadence",
         "priority": 90
       }
-    ]
+    ],
+    "consumes": []
   }
 }
