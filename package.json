@@ -16,8 +16,8 @@
         "packageName": "@cinatra-ai/auditor-agent",
         "edgeType": "runtime",
         "versionConstraint": {
-          "kind": "exact",
-          "version": "0.1.0"
+          "kind": "semver-range",
+          "range": "^0.1.0"
         },
         "requirement": "required",
         "kind": "agent"
@@ -26,8 +26,8 @@
         "packageName": "@cinatra-ai/reviewer-agent",
         "edgeType": "runtime",
         "versionConstraint": {
-          "kind": "exact",
-          "version": "0.1.0"
+          "kind": "semver-range",
+          "range": "^0.1.0"
         },
         "requirement": "required",
         "kind": "agent"
@@ -35,7 +35,7 @@
     ],
     "agentDependencies": {
       "@cinatra-ai/reviewer-agent": "^0.1.0",
-      "@cinatra-ai/auditor-agent": "^0.1.1"
+      "@cinatra-ai/auditor-agent": "^0.1.0"
     },
     "fieldRenderers": [
       {
