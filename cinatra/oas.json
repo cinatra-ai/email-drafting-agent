@@ -42,6 +42,14 @@
       "type": "object"
     },
     {
+      "title": "draftBundleTitle",
+      "type": "string"
+    },
+    {
+      "title": "draftBundleDocument",
+      "type": "string"
+    },
+    {
       "title": "userResponse",
       "type": "string"
     }
@@ -146,6 +154,30 @@
     },
     {
       "component_type": "DataFlowEdge",
+      "name": "draft_to_end_draftBundleTitle",
+      "source_node": {
+        "$component_ref": "draft"
+      },
+      "source_output": "draftBundleTitle",
+      "destination_node": {
+        "$component_ref": "end"
+      },
+      "destination_input": "draftBundleTitle"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "draft_to_end_draftBundleDocument",
+      "source_node": {
+        "$component_ref": "draft"
+      },
+      "source_output": "draftBundleDocument",
+      "destination_node": {
+        "$component_ref": "end"
+      },
+      "destination_input": "draftBundleDocument"
+    },
+    {
+      "component_type": "DataFlowEdge",
       "name": "approval_gate_to_end_userResponse",
       "source_node": {
         "$component_ref": "approval_gate"
@@ -205,7 +237,7 @@
       "url": "{{CINATRA_BASE_URL}}/api/llm-bridge",
       "http_method": "POST",
       "data": {
-        "system": "You are an email drafting agent. Generate exactly one personalized initial outreach email per recipient in JSON format: {\"draftedEmails\":[{\"recipientId\":\"<contactId>\",\"recipientName\":\"<name>\",\"recipientEmail\":\"<email>\",\"subject\":\"<subject>\",\"body\":\"<body>\"}],\"summary\":\"<one sentence summary>\"}. Do not send email — this agent only drafts.",
+        "system": "You are an email drafting agent. Generate exactly one personalized initial outreach email per recipient. Return a single JSON object with exactly these three top-level keys:\n- \"draftBundle\": {\"draftedEmails\":[{\"recipientId\":\"<contactId>\",\"recipientName\":\"<name>\",\"recipientEmail\":\"<email>\",\"subject\":\"<subject>\",\"body\":\"<body>\"}],\"summary\":\"<one sentence summary>\"}\n- \"draftBundleTitle\": a short human-readable title for this draft bundle, e.g. \"Email draft bundle (<N> recipients)\".\n- \"draftBundleDocument\": a single Markdown document rendering EVERY drafted email, one section per recipient in the form \"## <recipientName>\\n**Subject:** <subject>\\n\\n<body>\\n\\n---\\n\" (recipients in the same order as draftedEmails).\nDo not send email — this agent only drafts.",
         "user": "Execute the email drafting task now and return the result as JSON.\nInputs:\n- campaignId: {{ campaignId }}\n- confirmedRecipients: {{ confirmedRecipients }}",
         "agent_id": "email-drafting",
         "agent_run_id": "{{ agent_run_id }}",
@@ -223,6 +255,14 @@
               "type": "object"
             }
           }
+        },
+        {
+          "title": "draftBundleTitle",
+          "type": "string"
+        },
+        {
+          "title": "draftBundleDocument",
+          "type": "string"
         }
       ],
       "metadata": {
@@ -240,6 +280,22 @@
         {
           "title": "draftBundle",
           "type": "object"
+        },
+        {
+          "title": "draftBundleTitle",
+          "type": "string"
+        },
+        {
+          "title": "draftBundleDocument",
+          "type": "string",
+          "cinatra": {
+            "artifact": {
+              "extension": "@cinatra-ai/email-body-artifact",
+              "contentFrom": "draftBundleDocument",
+              "declaredMime": "text/markdown",
+              "titleFrom": "draftBundleTitle"
+            }
+          }
         },
         {
           "title": "userResponse",
