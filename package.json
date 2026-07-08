@@ -11,6 +11,7 @@
   "cinatra": {
     "apiVersion": "cinatra.ai/v1",
     "kind": "agent",
+    "displayName": "Email Drafting Agent",
     "dependencies": [
       {
         "packageName": "@cinatra-ai/auditor-agent",
@@ -60,6 +61,15 @@
       {
         "extension": "@cinatra-ai/email-body-artifact"
       }
-    ]
+    ],
+    "packageType": "agent",
+    "manifestVersion": 1,
+    "sourceTemplateId": "email-drafting-flow",
+    "sourceVersionId": "63943b92-95b7-4d38-96ff-c4046226aaa7",
+    "sourceVersionNumber": 1,
+    "riskLevel": "low",
+    "hasApprovalGates": true,
+    "toolAccess": [],
+    "ownerOrgId": null
   }
 }
