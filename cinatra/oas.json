@@ -291,6 +291,7 @@
           "cinatra": {
             "artifact": {
               "extension": "@cinatra-ai/email-artifacts",
+              "objectTypeId": "@cinatra-ai/email:body",
               "contentFrom": "draftBundleDocument",
               "declaredMime": "text/markdown",
               "titleFrom": "draftBundleTitle"
