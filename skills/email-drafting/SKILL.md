@@ -51,7 +51,7 @@ Do NOT call `objects_save` or any other persistence tool from this flow — ther
 wired into this agent's flow, and no MCP object-writing tool is bound to it. Persistence is fully
 declarative: the EndNode output binding (`cinatra.artifact` on `draftBundleDocument` in
 `cinatra/oas.json`) tells the host to materialize `draftBundleDocument` (titled by
-`draftBundleTitle`) as a `@cinatra-ai/email-body-artifact` artifact automatically at run
+`draftBundleTitle`) as a `@cinatra-ai/email-artifacts` artifact automatically at run
 completion. Your only job is to produce the three JSON fields above — never author or return a
 save/persist call yourself.
 
