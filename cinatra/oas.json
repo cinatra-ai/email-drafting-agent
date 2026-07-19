@@ -290,7 +290,7 @@
           "type": "string",
           "cinatra": {
             "artifact": {
-              "extension": "@cinatra-ai/email-body-artifact",
+              "extension": "@cinatra-ai/email-artifacts",
               "contentFrom": "draftBundleDocument",
               "declaredMime": "text/markdown",
               "titleFrom": "draftBundleTitle"
