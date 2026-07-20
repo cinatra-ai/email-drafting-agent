@@ -59,11 +59,6 @@
         "id": "@cinatra-ai/email-drafting-agent:email-drafts-review",
         "kind": "email-drafts-review",
         "priority": 80
-      },
-      {
-        "id": "@cinatra-ai/email-drafting-agent:follow-up-cadence",
-        "kind": "follow-up-cadence",
-        "priority": 90
       }
     ],
     "consumes": [],
