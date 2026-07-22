@@ -41,19 +41,33 @@ Return a single JSON object with exactly these top-level keys:
 }
 ```
 
-`draftBundle` feeds the existing downstream review/approval flow unchanged. `draftBundleTitle` and
-`draftBundleDocument` exist ONLY so the host can materialize the draft bundle as a real artifact —
-see "Persistence" below.
+`draftBundle` feeds the downstream review/approval flow. `draftBundleTitle` and
+`draftBundleDocument` are the human-readable title + Markdown for the review gate and the
+materialized artifact — see "Persistence" below.
 
 ## Persistence
 
-Do NOT call `objects_save` or any other persistence tool from this flow — there is no such node
-wired into this agent's flow, and no MCP object-writing tool is bound to it. Persistence is fully
-declarative: the EndNode output binding (`cinatra.artifact` on `draftBundleDocument` in
-`cinatra/oas.json`) tells the host to materialize `draftBundleDocument` (titled by
-`draftBundleTitle`) as a `@cinatra-ai/email-artifacts` artifact automatically at run
-completion. Your only job is to produce the three JSON fields above — never author or return a
-save/persist call yourself.
+STEP 3 — BEFORE returning the JSON, call `objects_save` EXACTLY ONCE to write the generated bundle
+as this run's pre-gate draft-bundle record. The re-entrant review gate loads THIS object, the
+operator edits it, and the post-approval `apply` node updates it in place — so the bundle MUST
+exist before the gate. Use exactly this structure:
+
+```json
+objects_save({
+  "typeHint": "@cinatra-ai/campaigns:email-draft-bundle",
+  "rawData": {
+    "cinatra_agent_run_id": "<the agent_run_id input>",
+    "campaignId": "<the campaignId input>",
+    "draftedEmails": [ ...the SAME draftedEmails array you return in draftBundle... ],
+    "summary": "<the same summary>"
+  }
+})
+```
+
+Call `objects_save` once only, and save no other object type. The run id is stamped automatically
+from the run context; the reviewed content (not this generated pre-image) is what the flow's
+terminal output/artifact ultimately carries — the `apply` node regenerates the artifact document
+server-side from the operator-approved bundle. Do not send email; this agent only drafts.
 
 ## Draft quality standards
 
