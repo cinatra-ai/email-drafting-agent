@@ -54,11 +54,6 @@
         "kind": "email-drafts-review",
         "priority": 80,
         "a2uiTranslator": "drafts-output"
-      },
-      {
-        "id": "@cinatra-ai/email-drafting-agent:email-drafts-review",
-        "kind": "email-drafts-review",
-        "priority": 80
       }
     ],
     "consumes": [],
