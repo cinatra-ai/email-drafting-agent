@@ -1,37 +1,20 @@
 {
   "name": "@cinatra-ai/email-drafting-agent",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "license": "Apache-2.0",
   "files": [
     "cinatra"
   ],
   "description": "Generates personalized initial emails for every recipient.",
   "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
   "cinatra": {
     "apiVersion": "cinatra.ai/v1",
     "kind": "agent",
     "displayName": "Email Drafting Agent",
     "dependencies": [
-      {
-        "packageName": "@cinatra-ai/auditor-agent",
-        "edgeType": "runtime",
-        "versionConstraint": {
-          "kind": "semver-range",
-          "range": "^0.1.0"
-        },
-        "requirement": "required",
-        "kind": "agent"
-      },
-      {
-        "packageName": "@cinatra-ai/reviewer-agent",
-        "edgeType": "runtime",
-        "versionConstraint": {
-          "kind": "semver-range",
-          "range": "^0.1.0"
-        },
-        "requirement": "required",
-        "kind": "agent"
-      },
       {
         "packageName": "@cinatra-ai/email-artifacts",
         "edgeType": "runtime",
@@ -43,10 +26,6 @@
         "kind": "artifact"
       }
     ],
-    "agentDependencies": {
-      "@cinatra-ai/reviewer-agent": "^0.1.0",
-      "@cinatra-ai/auditor-agent": "^0.1.0"
-    },
     "fieldRenderers": [
       {
         "id": "@cinatra-ai/email-drafting-agent:output",
