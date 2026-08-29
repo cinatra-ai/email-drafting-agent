@@ -10,7 +10,13 @@
       "hitlScreens": [
         "@cinatra-ai/email-drafting-agent:email-drafts-review"
       ],
-      "packageName": "@cinatra-ai/email-drafting-agent"
+      "packageName": "@cinatra-ai/email-drafting-agent",
+      "produces": [
+        {
+          "extension": "@cinatra-ai/email-artifacts",
+          "objectTypeId": "@cinatra-ai/email:body"
+        }
+      ]
     }
   },
   "inputs": [
