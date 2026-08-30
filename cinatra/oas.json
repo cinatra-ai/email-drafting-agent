@@ -251,9 +251,7 @@
       "name": "Inputs",
       "metadata": {
         "cinatra": {
-          "required": [
-            "campaignId"
-          ],
+          "required": [],
           "hidden": [
             "campaignId",
             "confirmedRecipients",
