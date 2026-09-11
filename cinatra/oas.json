@@ -308,8 +308,33 @@
           "title": "draftBundle",
           "type": "object",
           "json_schema": {
-            "items": {
-              "type": "object"
+            "properties": {
+              "draftedEmails": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "recipientId": {
+                      "type": "string"
+                    },
+                    "recipientName": {
+                      "type": "string"
+                    },
+                    "recipientEmail": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "body": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "summary": {
+                "type": "string"
+              }
             }
           }
         },
