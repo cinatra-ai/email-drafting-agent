@@ -79,6 +79,9 @@
       "$component_ref": "apply"
     },
     {
+      "$component_ref": "drafting_summary"
+    },
+    {
       "$component_ref": "end"
     }
   ],
@@ -115,9 +118,19 @@
     },
     {
       "component_type": "ControlFlowEdge",
-      "name": "apply_to_end",
+      "name": "apply_to_drafting_summary",
       "from_node": {
         "$component_ref": "apply"
+      },
+      "to_node": {
+        "$component_ref": "drafting_summary"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "drafting_summary_to_end",
+      "from_node": {
+        "$component_ref": "drafting_summary"
       },
       "to_node": {
         "$component_ref": "end"
@@ -244,6 +257,18 @@
         "$component_ref": "apply"
       },
       "destination_input": "agent_run_id"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "apply_to_drafting_summary_reviewedBundle",
+      "source_node": {
+        "$component_ref": "apply"
+      },
+      "source_output": "reviewedBundle",
+      "destination_node": {
+        "$component_ref": "drafting_summary"
+      },
+      "destination_input": "reviewedBundle"
     }
   ],
   "$referenced_components": {
@@ -351,6 +376,24 @@
         "cinatra": {
           "riskClass": "draft_create",
           "requiresApproval": false
+        }
+      }
+    },
+    "drafting_summary": {
+      "component_type": "OutputMessageNode",
+      "id": "drafting_summary",
+      "name": "Drafting result",
+      "inputs": [
+        {
+          "title": "reviewedBundle",
+          "type": "object",
+          "default": null
+        }
+      ],
+      "message": "{# pyagentspec-input-hint (do not remove): {{ reviewedBundle }} #}{% if not reviewedBundle or not reviewedBundle.draftedEmails %}No emails were drafted in this run: there were no recipients to write to, or no draft could be written for them.{% else %}{{ reviewedBundle.draftedEmails | length }} email drafts were reviewed and saved.{% endif %}",
+      "metadata": {
+        "cinatra": {
+          "purpose": "plain-language-drafting-ending"
         }
       }
     },
