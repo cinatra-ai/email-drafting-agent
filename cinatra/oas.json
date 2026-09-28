@@ -387,7 +387,7 @@
         {
           "title": "reviewedBundle",
           "type": "object",
-          "default": null
+          "default": {}
         }
       ],
       "message": "{# pyagentspec-input-hint (do not remove): {{ reviewedBundle }} #}{% if not reviewedBundle or not reviewedBundle.draftedEmails %}No emails were drafted in this run: there were no recipients to write to, or no draft could be written for them.{% else %}{{ reviewedBundle.draftedEmails | length }} email drafts were reviewed and saved.{% endif %}",
