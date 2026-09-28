@@ -93,7 +93,7 @@ test("(19) an empty drafting run ends in plain language", () => {
   assert.match(message, /reviewed and saved/i, "a run with drafts has no plain-language ending");
   assert.match(outsideComment(message), /\breviewedBundle\b/, "the sentence never reads the reviewed bundle");
   assert.equal(summary.metadata?.cinatra?.purpose, "plain-language-drafting-ending");
-  assert.deepEqual(summary.inputs, [{ title: "reviewedBundle", type: "object", default: null }]);
+  assert.deepEqual(summary.inputs, [{ title: "reviewedBundle", type: "object", default: {} }]);
   assert.equal(countDataEdges("apply.reviewedBundle", "drafting_summary.reviewedBundle"), 1);
 });
 
@@ -167,4 +167,37 @@ test("an output message declares only inputs its template reads", () => {
     }
   }
   assert.deepEqual(offenders, [], "the runtime rejects an input the template never reads: " + offenders.join(", "));
+});
+
+/** Whether the runtime's flow loader admits a default for a declared JSON
+ *  schema type: a type may be a list of names, any of which admits the value,
+ *  and null fits only where the type carries "null". */
+function defaultFitsType(type, value) {
+  const names = Array.isArray(type) ? type : [type];
+  return names.some((name) => {
+    if (name === "null") return value === null;
+    if (name === "object") return value !== null && typeof value === "object" && !Array.isArray(value);
+    if (name === "array") return Array.isArray(value);
+    if (name === "string") return typeof value === "string";
+    if (name === "boolean") return typeof value === "boolean";
+    if (name === "number" || name === "integer") return typeof value === "number";
+    return false;
+  });
+}
+
+test("(19) every output message input's default fits its declared type", () => {
+  const endings = nodesOfType("OutputMessageNode");
+  assert.ok(endings.length > 0, "the run has no closing statement");
+  const offenders = [];
+  for (const node of endings) {
+    for (const input of node.inputs ?? []) {
+      if (!Object.hasOwn(input, "default")) continue;
+      if (!defaultFitsType(input.type, input.default)) offenders.push(`${node.id}.${input.title}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "the runtime refuses to load a default its input's type does not admit: " + offenders.join(", "),
+  );
 });
