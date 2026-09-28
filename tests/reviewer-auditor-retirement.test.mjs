@@ -222,10 +222,15 @@ test("B4: the operator reads the drafts, and their decision + edits reach the pe
         e.destination_input === into,
     );
 
-  // Inbound: the generated bundle is what the operator is shown.
+  // Inbound: the drafted body artifacts and the saved bundle are what the
+  // operator is shown.
   assert.ok(
-    hasDataEdge(DRAFT_ID, "draftBundle", GATE_ID, "draftBundle"),
-    "the generated drafts no longer flow into the gate",
+    hasDataEdge(DRAFT_ID, "draftBodyArtifacts", GATE_ID, "draftBodyArtifacts"),
+    "the drafted body artifacts no longer flow into the gate",
+  );
+  assert.ok(
+    hasDataEdge(DRAFT_ID, "draftBundleRef", GATE_ID, "draftBundleRef"),
+    "the saved draft bundle no longer flows into the gate",
   );
 
   // Outbound: the operator's answer (decision + per-recipient edits) is what the
