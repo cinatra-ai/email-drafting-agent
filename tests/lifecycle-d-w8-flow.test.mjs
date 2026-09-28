@@ -72,7 +72,7 @@ test("(19) the run ends in plain language, never in the envelope", () => {
   assert.ok(!hasEdge("apply", "end"), "the run still jumps straight to its end");
   assert.deepEqual(
     refs.end.outputs.map((o) => o.title),
-    ["draftBundle", "draftBundleTitle", "draftBundleDocument", "userResponse"],
+    ["draftBundle", "draftBundleTitle", "draftBundleDocument", "userResponse", "draftBundleRef"],
     "the end node no longer carries the values the run hands on",
   );
 });
@@ -84,9 +84,9 @@ test("(19) an empty drafting run ends in plain language", () => {
   assert.equal(
     message,
     "{# pyagentspec-input-hint (do not remove): {{ reviewedBundle }} #}" +
-      "{% if not reviewedBundle or not reviewedBundle.draftedEmails %}No emails were drafted in this run: " +
+      "{% if not reviewedBundle or not reviewedBundle.drafts %}No emails were drafted in this run: " +
       "there were no recipients to write to, or no draft could be written for them." +
-      "{% else %}{{ reviewedBundle.draftedEmails | length }} email drafts were reviewed and saved.{% endif %}",
+      "{% else %}{{ reviewedBundle.drafts | length }} email drafts were reviewed and saved.{% endif %}",
     "each outcome does not reach its own sentence: nothing drafted, drafts saved",
   );
   assert.match(message, /no emails were drafted/i, "an empty drafting run has no plain-language ending");
