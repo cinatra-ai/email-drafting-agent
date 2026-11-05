@@ -3,8 +3,9 @@
 // The outreach pack (@cinatra-ai/email-outreach-agent) runs this agent as an
 // embedded copy of this flow. The fixture
 // tests/fixtures/email-outreach-drafting-subflow.json is that copy taken whole:
-// the value of "email-drafting-subflow" in the outreach pack's cinatra/oas.json
-// at commit 40d55008839c04952057042cfb60572c2f1ac23a.
+// the value of "email-drafting-subflow" that the outreach pack's generator
+// (scripts/embedded-copies.mjs --write) writes from this flow with the drafts
+// review's read step (cinatra-ai/cinatra#3089).
 //
 // This flow is the source of truth the copy is re-inlined from, so it must
 // carry everything the copy carries. The rule is CONTAINS: with the copy's id
