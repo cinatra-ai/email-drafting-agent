@@ -1,8 +1,9 @@
 // The declared module saved-drafts.mjs: it reads the run's saved draft bundle
 // through the objects port and hands its drafts to the drafts review under
 // draftBundle.draftedEmails; a missing reference, an object that is no draft
-// bundle, a bundle without drafts and a draft without a recipient are refused
-// by name - cinatra-ai/cinatra#3089.
+// bundle, a bundle without drafts, a draft without a recipient or without
+// subject and body text, and two drafts the review cannot tell apart are
+// refused by name - cinatra-ai/cinatra#3089.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -141,11 +142,11 @@ test("D7 a draft that is not a draft, or names no recipient, is refused with its
 });
 
 test("D8 a followUpDay that is not a finite number is not handed on", async () => {
-  const row = { recipientEmail: "dee@example.com", subject: "Idea four", body: "Hello Dee" };
+  const rowOf = (i) => ({ recipientEmail: `dee${i}@example.com`, subject: "Idea four", body: "Hello Dee" });
   const days = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "3", null, true];
-  const { ports } = makePorts({ saved: bundleOf({ drafts: days.map((followUpDay) => ({ ...row, followUpDay })) }) });
+  const { ports } = makePorts({ saved: bundleOf({ drafts: days.map((followUpDay, i) => ({ ...rowOf(i), followUpDay })) }) });
   const answer = await extensionTool({ input: { draftBundleRef: "bundle-1" }, ports });
-  assert.deepEqual(answer.draftBundle.draftedEmails, days.map(() => row));
+  assert.deepEqual(answer.draftBundle.draftedEmails, days.map((_, i) => rowOf(i)));
 });
 
 test("D9 a draftedEmails that is not a list leaves the drafts to be read from drafts", async () => {
@@ -212,6 +213,127 @@ test("D14 a draft whose id is no text, with no email and no recipientId, names n
       (e) => assertRefusal(e) && /^Draft 1 of this run names no recipient/.test(e.message),
     );
   }
+});
+
+const refused = (pattern) => (e) => assertRefusal(e) && pattern.test(e.message);
+const readOf = async (data) => {
+  const { ports } = makePorts({ saved: bundleOf(data) });
+  return extensionTool({ input: { draftBundleRef: "bundle-1" }, ports });
+};
+
+test("D17 saved data whose prototype is another object is no draft bundle, even with a null-prototype parent", async () => {
+  const parent = Object.assign(Object.create(null), { drafts: DRAFTS });
+  const inherited = Object.create(parent); // no own drafts: they are only inherited
+  class SavedBundle {
+    constructor() {
+      this.drafts = DRAFTS;
+    }
+  }
+  const reparented = Object.setPrototypeOf(new SavedBundle(), Object.create(null));
+  for (const data of [inherited, reparented]) {
+    await assert.rejects(readOf(data), refused(/is not an email draft bundle/));
+  }
+  const row = Object.setPrototypeOf({ ...DRAFTS[0] }, Object.create(null));
+  await assert.rejects(readOf({ drafts: [row] }), refused(/^Draft 1 of this run is not a draft/));
+});
+
+test("D18 a getter or a setter on the saved data or on a draft is refused and never run", async () => {
+  let runs = 0;
+  const cases = [
+    [{ get drafts() { runs += 1; return DRAFTS; } }, /is not an email draft bundle/],
+    [{ get drafts() { runs += 1; throw new Error("the getter ran"); } }, /is not an email draft bundle/],
+    [{ drafts: DRAFTS, set draftedEmails(_v) { runs += 1; } }, /is not an email draft bundle/],
+    [{ drafts: [{ recipientEmail: "eve@example.com", get subject() { runs += 1; return "Made up"; }, body: "Hello" }] }, /^Draft 1 of this run is not a draft/],
+  ];
+  for (const [data, pattern] of cases) {
+    await assert.rejects(readOf(data), refused(pattern));
+  }
+  assert.equal(runs, 0);
+});
+
+test("D19 a list of drafts with another prototype or an accessor entry is no list of drafts", async () => {
+  let runs = 0;
+  const made = [];
+  const reparented = Object.setPrototypeOf([null], {
+    *entries() {
+      runs += 1;
+      yield [0, { recipientEmail: "mallory@example.com", subject: "Made up", body: "Not saved" }];
+    },
+  });
+  made.push(reparented);
+  const accessor = [];
+  Object.defineProperty(accessor, "0", { enumerable: true, get() { runs += 1; return DRAFTS[0]; } });
+  made.push(accessor);
+  for (const drafts of made) {
+    await assert.rejects(readOf({ drafts }), refused(/is not an email draft bundle/));
+  }
+  assert.equal(runs, 0);
+});
+
+test("D20 a draft whose subject or body is not text is refused with its position", async () => {
+  const base = { recipientEmail: "fay@example.com" };
+  const cases = [
+    { ...base, subject: 7, body: "Hello" },
+    { ...base, subject: "Idea eight", body: { text: "hello" } },
+    { ...base, subject: null, body: "Hello" },
+    { ...base, body: "Hello" },
+    { ...base, subject: "Idea eight" },
+  ];
+  for (const row of cases) {
+    await assert.rejects(readOf({ drafts: [DRAFTS[0], row] }), refused(/^Draft 2 of this run has a subject or a body that is not text/));
+  }
+  // Empty text is text: the screen shows it as saved, and the send reads the same.
+  const empty = { ...base, subject: "", body: "" };
+  const answer = await readOf({ drafts: [empty] });
+  assert.deepEqual(answer.draftBundle.draftedEmails, [empty]);
+});
+
+test("D21 two drafts that the review would show under one id, or that name one recipient email, are refused", async () => {
+  const text = { subject: "Idea nine", body: "Hello" };
+  const cases = [
+    [{ recipientEmail: "shared@example.com", ...text }, { recipientEmail: "shared@example.com", ...text, subject: "Second" }],
+    [{ id: "x@example.com", recipientEmail: "gil@example.com", ...text }, { recipientEmail: "x@example.com", ...text }],
+    [{ id: "d-1", ...text }, { recipientId: "d-1", ...text }],
+    [{ recipientEmail: "hal@example.com", ...text }, { id: "d-2", recipientEmail: "hal@example.com", ...text }],
+    [{ id: "", recipientEmail: "ivy@example.com", ...text }, { id: "", recipientEmail: "jon@example.com", ...text }],
+  ];
+  for (const drafts of cases) {
+    await assert.rejects(readOf({ drafts }), refused(/^Drafts 1 and 2 of this run /));
+  }
+  // Distinct ids with distinct emails pass, whichever field names each one.
+  const distinct = [{ id: "d-1", recipientEmail: "kim@example.com", ...text }, { recipientId: "d-2", ...text }, { recipientEmail: "lea@example.com", ...text }];
+  const answer = await readOf({ drafts: distinct });
+  assert.deepEqual(answer.draftBundle.draftedEmails, distinct);
+});
+
+test("D22 a draft that the review would show under the id __proto__ is refused", async () => {
+  for (const row of [
+    { id: "__proto__", recipientEmail: "max@example.com", subject: "Idea ten", body: "Hello" },
+    { recipientId: "__proto__", subject: "Idea ten", body: "Hello" },
+  ]) {
+    await assert.rejects(readOf({ drafts: [row] }), refused(/^Draft 1 of this run has the id __proto__/));
+  }
+});
+
+// The write-back edits the first list among draftedEmails, sequence, followups, drafts and confirmedRecipients that the
+// bundle holds; the review shows draftedEmails or drafts. A bundle where those two differ shows one list and edits another.
+test("D23 a bundle whose write-back would edit another list than the one the review shows is refused", async () => {
+  for (const data of [
+    { sequence: [DRAFTS[0]], drafts: DRAFTS },
+    { followups: [], drafts: DRAFTS },
+    { draftedEmails: "none", sequence: [DRAFTS[1]], drafts: DRAFTS },
+  ]) {
+    await assert.rejects(readOf(data), refused(/keeps its drafts in a list the drafts review does not show/));
+  }
+  // A list after drafts in that order is not the write-back's: the drafts are read.
+  const answer = await readOf({ drafts: DRAFTS, confirmedRecipients: [{ email: "ada@example.com" }] });
+  assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS);
+});
+
+test("D24 an unexpected failure of the read reaches the caller unchanged", async () => {
+  const failure = new TypeError("the store did not answer");
+  const { ports } = makePorts({ readError: failure });
+  await assert.rejects(extensionTool({ input: { draftBundleRef: "bundle-1" }, ports }), (e) => e === failure);
 });
 
 test("D15 no other port is touched", () => {
