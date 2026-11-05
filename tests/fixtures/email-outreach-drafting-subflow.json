@@ -63,9 +63,21 @@
       "title": "draftBundleRef",
       "type": "string",
       "default": ""
+    },
+    {
+      "title": "campaignId",
+      "type": "string",
+      "json_schema": {
+        "format": "uuid"
+      },
+      "default": ""
     }
   ],
   "outputs": [
+    {
+      "title": "userResponse",
+      "type": "string"
+    },
     {
       "title": "draftBundleRef",
       "type": "string",
@@ -82,15 +94,6 @@
       "$component_ref": "drafts-start"
     },
     {
-      "$component_ref": "drafts-draft"
-    },
-    {
-      "$component_ref": "drafts-approval_gate"
-    },
-    {
-      "$component_ref": "drafts-end"
-    },
-    {
       "$component_ref": "drafts-uuid_match"
     },
     {
@@ -101,6 +104,18 @@
     },
     {
       "$component_ref": "drafts-inputs_missing"
+    },
+    {
+      "$component_ref": "drafts-draft"
+    },
+    {
+      "$component_ref": "drafts-read_drafts"
+    },
+    {
+      "$component_ref": "drafts-approval_gate"
+    },
+    {
+      "$component_ref": "drafts-end"
     }
   ],
   "control_flow_connections": [
@@ -147,26 +162,6 @@
     },
     {
       "component_type": "ControlFlowEdge",
-      "name": "drafts-draft_to_drafts-approval_gate",
-      "from_node": {
-        "$component_ref": "drafts-draft"
-      },
-      "to_node": {
-        "$component_ref": "drafts-approval_gate"
-      }
-    },
-    {
-      "component_type": "ControlFlowEdge",
-      "name": "drafts-approval_gate_to_drafts-end",
-      "from_node": {
-        "$component_ref": "drafts-approval_gate"
-      },
-      "to_node": {
-        "$component_ref": "drafts-end"
-      }
-    },
-    {
-      "component_type": "ControlFlowEdge",
       "name": "drafts-check_inputs_default_to_inputs_missing",
       "from_node": {
         "$component_ref": "drafts-check_inputs"
@@ -178,9 +173,39 @@
     },
     {
       "component_type": "ControlFlowEdge",
-      "name": "drafts-inputs_missing_to_drafts-end",
+      "name": "drafts-inputs_missing_to_end",
       "from_node": {
         "$component_ref": "drafts-inputs_missing"
+      },
+      "to_node": {
+        "$component_ref": "drafts-end"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "drafts-draft_to_read_drafts",
+      "from_node": {
+        "$component_ref": "drafts-draft"
+      },
+      "to_node": {
+        "$component_ref": "drafts-read_drafts"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "drafts-read_drafts_to_approval_gate",
+      "from_node": {
+        "$component_ref": "drafts-read_drafts"
+      },
+      "to_node": {
+        "$component_ref": "drafts-approval_gate"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "drafts-approval_gate_to_end",
+      "from_node": {
+        "$component_ref": "drafts-approval_gate"
       },
       "to_node": {
         "$component_ref": "drafts-end"
@@ -190,7 +215,7 @@
   "data_flow_connections": [
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_agent_run_id",
+      "name": "drafts-start_to_draft_agent_run_id",
       "source_node": {
         "$component_ref": "drafts-start"
       },
@@ -202,7 +227,7 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_offeringCompanyWebsite",
+      "name": "drafts-start_to_draft_offeringCompanyWebsite",
       "source_node": {
         "$component_ref": "drafts-start"
       },
@@ -214,7 +239,7 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_callToAction",
+      "name": "drafts-start_to_draft_callToAction",
       "source_node": {
         "$component_ref": "drafts-start"
       },
@@ -226,7 +251,7 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_senderName",
+      "name": "drafts-start_to_draft_senderName",
       "source_node": {
         "$component_ref": "drafts-start"
       },
@@ -238,7 +263,7 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_confirmedRecipientsRef",
+      "name": "drafts-start_to_draft_confirmedRecipientsRef",
       "source_node": {
         "$component_ref": "drafts-start"
       },
@@ -250,7 +275,7 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-draft_to_drafts-end_draftBundleRef",
+      "name": "drafts-draft_to_end_draftBundleRef",
       "source_node": {
         "$component_ref": "drafts-draft"
       },
@@ -298,19 +323,7 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_contextSlotBindings",
-      "source_node": {
-        "$component_ref": "drafts-start"
-      },
-      "source_output": "contextSlotBindings",
-      "destination_node": {
-        "$component_ref": "drafts-draft"
-      },
-      "destination_input": "contextSlotBindings"
-    },
-    {
-      "component_type": "DataFlowEdge",
-      "name": "drafts-start_to_drafts-draft_contextSlotBindings",
+      "name": "drafts-start_to_draft_contextSlotBindings",
       "source_node": {
         "$component_ref": "drafts-start"
       },
@@ -343,6 +356,54 @@
         "$component_ref": "drafts-approval_gate"
       },
       "destination_input": "draftBundleRef"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-start_to_read_drafts_agent_run_id",
+      "source_node": {
+        "$component_ref": "drafts-start"
+      },
+      "source_output": "agent_run_id",
+      "destination_node": {
+        "$component_ref": "drafts-read_drafts"
+      },
+      "destination_input": "agent_run_id"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-draft_to_read_drafts_draftBundleRef",
+      "source_node": {
+        "$component_ref": "drafts-draft"
+      },
+      "source_output": "draftBundleRef",
+      "destination_node": {
+        "$component_ref": "drafts-read_drafts"
+      },
+      "destination_input": "draftBundleRef"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-read_drafts_to_approval_gate_draftBundle",
+      "source_node": {
+        "$component_ref": "drafts-read_drafts"
+      },
+      "source_output": "draftBundle",
+      "destination_node": {
+        "$component_ref": "drafts-approval_gate"
+      },
+      "destination_input": "draftBundle"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-approval_gate_to_end_userResponse",
+      "source_node": {
+        "$component_ref": "drafts-approval_gate"
+      },
+      "source_output": "userResponse",
+      "destination_node": {
+        "$component_ref": "drafts-end"
+      },
+      "destination_input": "userResponse"
     }
   ],
   "$referenced_components": {
@@ -360,7 +421,8 @@
             "senderName",
             "confirmedRecipientsRef",
             "contextSlotBindings",
-            "draftBundleRef"
+            "draftBundleRef",
+            "campaignId"
           ]
         }
       },
@@ -424,6 +486,14 @@
           "title": "draftBundleRef",
           "type": "string",
           "default": ""
+        },
+        {
+          "title": "campaignId",
+          "type": "string",
+          "json_schema": {
+            "format": "uuid"
+          },
+          "default": ""
         }
       ]
     },
@@ -434,7 +504,7 @@
       "url": "{{CINATRA_BASE_URL}}/api/llm-bridge",
       "http_method": "POST",
       "data": {
-        "system": "You are an email drafting agent.\n\nStep 1: Call objects_get with confirmedRecipientsRef to fetch the recipients list.\n\nStep 1b: For each entry of contextSlotBindings, call artifact_representation_get({ artifactId, representationRevisionId }) to read the pinned context the operator selected. Read the context ONLY through that road — never reach for the parent run's slot or project. Skip an entry the road refuses.\n\nStep 2: Generate exactly one personalized initial outreach email per recipient using offeringCompanyWebsite, callToAction, and senderName as context.\n\nStep 3 — CRITICAL: Call objects_save BEFORE returning any JSON. Use exactly this structure:\n  objects_save({\n    typeHint: \"@cinatra-ai/campaigns:email-draft-bundle\",\n    rawData: {\n      cinatra_agent_run_id: \"<agent_run_id input>\",\n      drafts: [\n        { recipientEmail: \"...\", subject: \"...\", body: \"...\", status: \"draft\" }\n      ]\n    }\n  })\n\nStep 4: Return ONLY this JSON using the object ID returned by objects_save: {\"draftBundleRef\":\"<objectId returned by objects_save>\",\"draftBodyArtifacts\":[{\"artifactId\":\"<id>\",\"representationRevisionId\":\"<revision>\"}],\"summary\":\"<one sentence summary>\"}. draftBodyArtifacts lists one @cinatra-ai/email:body artifact per draft, in recipient order, so the review screen can display the bodies themselves.\n\nDo NOT return draftBundleRef without completing Step 3. Never skip objects_save. Do not send emails — this agent only drafts.",
+        "system": "You are an email drafting agent.\n\nStep 1: Call objects_get with confirmedRecipientsRef to fetch the recipients list.\n\nStep 1b: For each entry of contextSlotBindings, call artifact_representation_get({ artifactId, representationRevisionId }) to read the pinned context the operator selected. Read the context ONLY through that road \u2014 never reach for the parent run's slot or project. Skip an entry the road refuses.\n\nStep 2: Generate exactly one personalized initial outreach email per recipient using offeringCompanyWebsite, callToAction, and senderName as context.\n\nStep 3 \u2014 CRITICAL: Call objects_save BEFORE returning any JSON. Use exactly this structure:\n  objects_save({\n    typeHint: \"@cinatra-ai/campaigns:email-draft-bundle\",\n    rawData: {\n      cinatra_agent_run_id: \"<agent_run_id input>\",\n      drafts: [\n        { recipientEmail: \"...\", subject: \"...\", body: \"...\", status: \"draft\" }\n      ]\n    }\n  })\n\nStep 4: Return ONLY this JSON using the object ID returned by objects_save: {\"draftBundleRef\":\"<objectId returned by objects_save>\",\"draftBodyArtifacts\":[{\"artifactId\":\"<id>\",\"representationRevisionId\":\"<revision>\"}],\"summary\":\"<one sentence summary>\"}. draftBodyArtifacts lists one @cinatra-ai/email:body artifact per draft, in recipient order, so the review screen can display the bodies themselves.\n\nDo NOT return draftBundleRef without completing Step 3. Never skip objects_save. Do not send emails \u2014 this agent only drafts.",
         "user": "Execute the email drafting task now and return the result as JSON.\nInputs:\n- offeringCompanyWebsite: {{ offeringCompanyWebsite }}\n- callToAction: {{ callToAction }}\n- senderName: {{ senderName }}\n- confirmedRecipientsRef: {{ confirmedRecipientsRef }}\n- contextSlotBindings: {{ contextSlotBindings }}",
         "agent_id": "email-drafting",
         "agent_run_id": "{{ agent_run_id }}"
@@ -511,17 +581,71 @@
         }
       ]
     },
+    "drafts-read_drafts": {
+      "component_type": "ApiNode",
+      "id": "drafts-read_drafts",
+      "name": "Read the saved drafts for the review",
+      "url": "{{CINATRA_BASE_URL}}/api/agents/passthrough",
+      "http_method": "POST",
+      "data": {
+        "tool": "extension_tool",
+        "input": {
+          "name": "saved_drafts",
+          "input": {
+            "draftBundleRef": "{{ draftBundleRef }}"
+          }
+        },
+        "agent_run_id": "{{ agent_run_id }}"
+      },
+      "inputs": [
+        {
+          "title": "agent_run_id",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "title": "draftBundleRef",
+          "type": "string",
+          "default": ""
+        }
+      ],
+      "outputs": [
+        {
+          "title": "draftBundle",
+          "type": "object",
+          "default": {}
+        },
+        {
+          "title": "ok",
+          "type": "boolean",
+          "default": false
+        }
+      ],
+      "metadata": {
+        "cinatra": {
+          "riskClass": "read_only",
+          "requiresApproval": false,
+          "description": "The agent reads the drafts this run saved and hands them to the drafts review, so the review shows the drafts that the approval and the send act on. A saved bundle that is missing, holds no drafts or has a draft without a recipient ends the run with its reason before the review."
+        }
+      }
+    },
     "drafts-end": {
       "component_type": "EndNode",
       "id": "drafts-end",
       "name": "End",
       "outputs": [
         {
+          "title": "userResponse",
+          "type": "string",
+          "default": ""
+        },
+        {
           "title": "draftBundleRef",
           "type": "string",
           "json_schema": {
             "format": "uuid"
-          }
+          },
+          "default": ""
         }
       ]
     },
@@ -556,6 +680,11 @@
                 "title": "Draft bundle",
                 "readOnly": true
               },
+              "draftBundle": {
+                "type": "object",
+                "title": "Drafts",
+                "readOnly": true
+              },
               "decision": {
                 "type": "string",
                 "title": "Decision",
@@ -574,7 +703,8 @@
             "required": [
               "decision"
             ]
-          }
+          },
+          "surfaceGateInputs": true
         }
       },
       "outputs": [
@@ -597,6 +727,11 @@
           "title": "draftBundleRef",
           "type": "string",
           "default": ""
+        },
+        {
+          "title": "draftBundle",
+          "type": "object",
+          "default": {}
         }
       ]
     },

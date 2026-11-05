@@ -63,6 +63,7 @@ const PUBLISHED_TEXT_FILES = [PKG_PATH, OAS_PATH, README_PATH];
 
 const GATE_ID = "approval_gate";
 const DRAFT_ID = "draft";
+const READ_ID = "read_drafts";
 const PERSIST_ID = "apply";
 const refs = oas.$referenced_components ?? {};
 const gate = refs[GATE_ID];
@@ -195,9 +196,11 @@ test("B2: the gate renders through this pack's own renderer, declared as a HITL 
 });
 
 test("B3: the gate still holds the run between drafting and the persist step", () => {
+  // The drafts reach the hold through the read step, which hands the gate the
+  // saved drafts its screen draws (cinatra-ai/cinatra#3089).
   assert.ok(
-    hasControlEdge(DRAFT_ID, GATE_ID),
-    `no control-flow edge ${DRAFT_ID} → ${GATE_ID} — the drafts no longer reach the hold`,
+    hasControlEdge(DRAFT_ID, READ_ID) && hasControlEdge(READ_ID, GATE_ID),
+    `no control-flow road ${DRAFT_ID} → ${READ_ID} → ${GATE_ID} — the drafts no longer reach the hold`,
   );
   assert.ok(
     hasControlEdge(GATE_ID, PERSIST_ID),
@@ -207,6 +210,10 @@ test("B3: the gate still holds the run between drafting and the persist step", (
   assert.ok(
     !hasControlEdge(DRAFT_ID, PERSIST_ID),
     `a ${DRAFT_ID} → ${PERSIST_ID} edge bypasses the operator gate`,
+  );
+  assert.ok(
+    !hasControlEdge(READ_ID, PERSIST_ID),
+    `a ${READ_ID} → ${PERSIST_ID} edge bypasses the operator gate`,
   );
 });
 
