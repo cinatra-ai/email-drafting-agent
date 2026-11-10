@@ -369,3 +369,28 @@ test("the read step's tool is declared by this package and its module is publish
   const loaded = await import(pathToFileURL(path.join(root, tool.module.slice(2))).href);
   assert.equal(typeof loaded.extensionTool, "function");
 });
+
+// ---------------------------------------------------------------------------
+// A confirmed recipient without an email address - cinatra-ai/email-drafting-agent#56.
+//
+// The recipients review admits a contact whose email is empty. The draft step
+// saves each draft under the recipient's contact id (recipientId) and name,
+// beside the email, so such a draft still names its recipient and the review
+// shows it. Two such contacts are two drafts, not one email shared by two.
+// ---------------------------------------------------------------------------
+
+const WITHOUT_EMAIL = [
+  { recipientId: "contact-ada", recipientName: "Ada Example", recipientEmail: "ada@example.com", subject: "A short idea for Example One", body: "Hello Ada,\n\nOne idea.", status: "draft" },
+  { recipientId: "contact-ben", recipientName: "Ben Example", recipientEmail: "", subject: "A short idea for Example Two", body: "Hello Ben,\n\nAnother idea.", status: "draft" },
+  { recipientId: "contact-cy", recipientName: "Cy Example", recipientEmail: "", subject: "A short idea for Example Three", body: "Hello Cy,\n\nA third idea.", status: "draft" },
+];
+
+test("drafts for contacts without an email address reach the screen, one row each, under the contact id", async () => {
+  const run = savedRun({ cinatra_agent_run_id: "run-1", drafts: WITHOUT_EMAIL });
+  const rows = await screenOf(run);
+  assert.deepEqual(
+    rows.map(({ id, recipientName, recipientEmail, subject }) => ({ id, recipientName, recipientEmail, subject })),
+    WITHOUT_EMAIL.map(({ recipientId, recipientName, recipientEmail, subject }) => ({ id: recipientId, recipientName, recipientEmail, subject })),
+    "a draft for a contact without an email address does not reach the drafts review screen",
+  );
+});
