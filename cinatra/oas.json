@@ -685,6 +685,7 @@
         "cinatra": {
           "riskClass": "draft_create",
           "requiresApproval": true,
+          "publishes": false,
           "renderer": "@cinatra-ai/email-drafting-agent:output",
           "a2uiSurfaceId": "email-drafting:step-1:output"
         }
@@ -958,7 +959,8 @@
       "metadata": {
         "cinatra": {
           "riskClass": "draft_update",
-          "requiresApproval": false
+          "requiresApproval": false,
+          "publishes": false
         }
       }
     },
@@ -966,7 +968,11 @@
       "component_type": "PluginRegexNode",
       "id": "uuid_match",
       "name": "uuid_match",
-      "metadata": {},
+      "metadata": {
+        "cinatra": {
+          "publishes": false
+        }
+      },
       "inputs": [
         {
           "title": "text",
@@ -996,7 +1002,11 @@
       "component_type": "PluginTemplateNode",
       "id": "check_inputs_predicate",
       "name": "check_inputs_predicate",
-      "metadata": {},
+      "metadata": {
+        "cinatra": {
+          "publishes": false
+        }
+      },
       "inputs": [
         {
           "title": "matches"
