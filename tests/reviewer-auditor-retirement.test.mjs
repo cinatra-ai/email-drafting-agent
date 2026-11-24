@@ -15,19 +15,16 @@
 //
 //   B. HOLD PRESERVED — removing the pins must NOT quietly remove the user's
 //      control point. The flow's own `approval_gate` InputMessageNode is the
-//      mid-run hold: the operator reads the generated drafts, edits them, and
-//      approves or rejects BEFORE the reviewed drafts are applied. (The `draft`
-//      node deliberately persists a PRE-GATE bundle record first, so the gate
-//      has something re-entrant to load and update — the operator's decision
-//      still governs everything downstream of it.) Its answer is also
-//      load-bearing beyond the pause — the downstream persist primitive
-//      (`email_outreach_initial_drafts_update`) is a run-scoped PERSIST tool
-//      that fails closed without answered-gate provenance minted at that
-//      operator answer, and the operator's edits travel to it as the gate's
-//      `userResponse` → `resumePayload`. So the gate, its renderer, its
-//      hitlScreens entry, and its data edge into the persist node are all
-//      asserted here: a future cleanup that deletes the gate "because core
-//      reviews artifacts now" would silently drop both the hold and the edits.
+//      mid-run hold: the run files each saved draft body as its own email body
+//      (`file_drafts`) and waits at the gate while the host reviews each body,
+//      in draft order, BEFORE anything downstream runs (cinatra-ai/cinatra#3089).
+//      The gate is the host's review: it carries the marker
+//      `metadata.cinatra.artifactReview.targetsInput` and draws no screen of
+//      the pack's own. Nothing is edited in place any more, so no persist step
+//      follows it. The gate, its marker, its target edge from the filing step
+//      and the road through it are asserted here: a future cleanup that deletes
+//      the gate "because core reviews artifacts now" would silently drop the
+//      hold.
 //
 // Zero-dependency by design (Node builtins only), mirroring
 // `extension-kind-gate.mjs`: this repo's CI runs unauthenticated, before the
@@ -64,7 +61,8 @@ const PUBLISHED_TEXT_FILES = [PKG_PATH, OAS_PATH, README_PATH];
 const GATE_ID = "approval_gate";
 const DRAFT_ID = "draft";
 const READ_ID = "read_drafts";
-const PERSIST_ID = "apply";
+const FILE_ID = "file_drafts";
+const AFTER_ID = "drafting_summary";
 const refs = oas.$referenced_components ?? {};
 const gate = refs[GATE_ID];
 const gateMeta = gate?.metadata?.cinatra ?? {};
@@ -161,11 +159,19 @@ test("A5: no embedded reviewer/auditor invocation node or branch remains", () =>
 // B. Hold preserved — the user keeps the same approve/reject opportunity
 // ---------------------------------------------------------------------------
 
+const hasDataEdge = (from, out, to, into) =>
+  dataEdges.some(
+    (e) =>
+      e.source_node?.$component_ref === from &&
+      e.source_output === out &&
+      e.destination_node?.$component_ref === to &&
+      e.destination_input === into,
+  );
+
 test("B1: the mid-run operator gate still exists and still holds the run", () => {
   assert.ok(gate, `the "${GATE_ID}" node is missing — the mid-run hold is gone`);
   assert.equal(gate.component_type, "InputMessageNode");
   assert.equal(gateMeta.requiresApproval, true, "the gate no longer requires approval");
-  assert.equal(gateMeta.riskClass, "approval");
   // A node the flow does not LIST is never executed, however well-formed it is.
   assert.ok(
     (oas.nodes ?? []).some((n) => n.$component_ref === GATE_ID),
@@ -178,108 +184,57 @@ test("B1: the mid-run operator gate still exists and still holds the run", () =>
   );
 });
 
-test("B2: the gate renders through this pack's own renderer, declared as a HITL screen", () => {
-  const renderer = gateMeta.renderer;
-  assert.equal(typeof renderer, "string");
-  assert.ok(renderer.startsWith(`${pkg.name}:`), `gate renderer "${renderer}" is not pack-namespaced`);
-  // The gate's own `renderer` is the resolution key; `hitlScreens` is the
-  // flow-level declaration the host and MCP discovery read to classify this
-  // pause as a HITL screen. They must name the same id or the flow advertises a
-  // screen it does not render.
+test("B2: the gate is the host's review of the filed bodies, with no screen of the pack's own", () => {
+  const targetsInput = gateMeta.artifactReview?.targetsInput;
+  assert.equal(targetsInput, "reviewTargets", "the gate does not carry the host review marker");
   assert.ok(
-    (oas.metadata?.cinatra?.hitlScreens ?? []).includes(renderer),
-    `metadata.cinatra.hitlScreens must list the gate renderer "${renderer}"`,
+    (gate.inputs ?? []).some((i) => i.title === targetsInput && i.type === "string"),
+    "the marker names no string input of the gate",
   );
-  // The renderer needs the gate's INPUTS surfaced to it, or the operator gets a
-  // decision prompt with no drafts to read or edit.
-  assert.equal(gateMeta.surfaceGateInputs, true, "the gate no longer surfaces its inputs to the renderer");
-});
-
-test("B3: the gate still holds the run between drafting and the persist step", () => {
-  // The drafts reach the hold through the read step, which hands the gate the
-  // saved drafts its screen draws (cinatra-ai/cinatra#3089).
-  assert.ok(
-    hasControlEdge(DRAFT_ID, READ_ID) && hasControlEdge(READ_ID, GATE_ID),
-    `no control-flow road ${DRAFT_ID} → ${READ_ID} → ${GATE_ID} — the drafts no longer reach the hold`,
-  );
-  assert.ok(
-    hasControlEdge(GATE_ID, PERSIST_ID),
-    `no control-flow edge ${GATE_ID} → ${PERSIST_ID} — the hold no longer precedes the persist`,
-  );
-  // The hold must not be short-circuited by an edge that skips it.
-  assert.ok(
-    !hasControlEdge(DRAFT_ID, PERSIST_ID),
-    `a ${DRAFT_ID} → ${PERSIST_ID} edge bypasses the operator gate`,
-  );
-  assert.ok(
-    !hasControlEdge(READ_ID, PERSIST_ID),
-    `a ${READ_ID} → ${PERSIST_ID} edge bypasses the operator gate`,
-  );
-});
-
-test("B4: the operator reads the drafts, and their decision + edits reach the persist step", () => {
-  // Match on the FULL (node, port) tuple, so an added parallel edge between the
-  // same two nodes can never make this read the wrong edge and fail spuriously.
-  const hasDataEdge = (from, out, to, into) =>
-    dataEdges.some(
-      (e) =>
-        e.source_node?.$component_ref === from &&
-        e.source_output === out &&
-        e.destination_node?.$component_ref === to &&
-        e.destination_input === into,
-    );
-
-  // Inbound: the drafted body artifacts and the saved bundle are what the
-  // operator is shown.
-  assert.ok(
-    hasDataEdge(DRAFT_ID, "draftBodyArtifacts", GATE_ID, "draftBodyArtifacts"),
-    "the drafted body artifacts no longer flow into the gate",
-  );
-  assert.ok(
-    hasDataEdge(DRAFT_ID, "draftBundleRef", GATE_ID, "draftBundleRef"),
-    "the saved draft bundle no longer flows into the gate",
-  );
-
-  // Outbound: the operator's answer (decision + per-recipient edits) is what the
-  // persist step applies.
-  assert.ok(
-    hasDataEdge(GATE_ID, "userResponse", PERSIST_ID, "resumePayload"),
-    "the gate's answer no longer feeds the persist node as its resume payload",
-  );
-
-  // The persist primitive is answered-gate-provenance bound: it consumes the
-  // resume payload of the very gate answer that authorized it.
-  const persist = refs[PERSIST_ID];
-  assert.equal(persist?.data?.tool, "email_outreach_initial_drafts_update");
-  assert.equal(persist?.data?.input?.resumePayloadJson, "{{ resumePayload }}");
-});
-
-test("B5: the produced artifact binding core reviews on is intact", () => {
-  // Core interception opens the run-embedded review gate off the durable
-  // artifact this flow materializes — the declarative EndNode binding is what
-  // routes the write through the enumerated `createSemanticArtifact` emitter.
-  const declared = pkg.cinatra?.produces ?? [];
-  assert.ok(declared.length > 0, "cinatra.produces declares no artifact production");
-  const bindings = (refs.end?.outputs ?? [])
-    .map((o) => o?.cinatra?.artifact)
-    .filter(Boolean);
-  for (const { extension, objectTypeId } of declared) {
-    assert.ok(
-      bindings.some((b) => b.extension === extension && b.objectTypeId === objectTypeId),
-      `no EndNode artifact binding materializes the declared production ${extension} / ${objectTypeId}`,
-    );
+  for (const key of ["renderer", "inputRenderers", "gateRenderer"]) {
+    assert.equal(Object.hasOwn(gateMeta, key), false, `the gate still names a screen of its own (${key})`);
   }
-  // The reviewed content — not the pre-gate draft — is what gets materialized.
-  const bound = bindings.find((b) => b.extension === "@cinatra-ai/email-artifacts");
-  assert.ok(bound, "the email-artifacts binding is missing");
-  assert.equal(bound.contentFrom, "draftBundleDocument");
+  assert.ok(!JSON.stringify(gate).includes('"x-renderer"'), "the gate's schema still selects a renderer");
+  assert.equal(oas.metadata?.cinatra?.hitlScreens, undefined, "the flow still declares a screen of its own");
+  assert.equal(pkg.cinatra?.fieldRenderers, undefined, "the manifest still declares a renderer of its own");
+});
+
+test("B3: the gate holds the run between filing the bodies and everything after it", () => {
   assert.ok(
-    dataEdges.some(
-      (e) =>
-        e.source_node?.$component_ref === PERSIST_ID &&
-        e.destination_node?.$component_ref === "end" &&
-        e.destination_input === bound.contentFrom,
-    ),
-    `the materialized "${bound.contentFrom}" no longer comes from the reviewed output of "${PERSIST_ID}"`,
+    hasControlEdge(DRAFT_ID, READ_ID) && hasControlEdge(READ_ID, FILE_ID) && hasControlEdge(FILE_ID, GATE_ID),
+    `no control-flow road ${DRAFT_ID} → ${READ_ID} → ${FILE_ID} → ${GATE_ID} — the filed bodies no longer reach the hold`,
+  );
+  assert.ok(hasControlEdge(GATE_ID, AFTER_ID), `no control-flow edge ${GATE_ID} → ${AFTER_ID}`);
+  // The hold must not be short-circuited by an edge that skips it.
+  for (const from of [DRAFT_ID, READ_ID, FILE_ID]) {
+    for (const to of [AFTER_ID, "end"]) {
+      assert.ok(!hasControlEdge(from, to), `a ${from} → ${to} edge bypasses the operator gate`);
+    }
+  }
+});
+
+test("B4: the gate reviews exactly the bodies the filing step filed, and nothing is applied after it", () => {
+  assert.ok(
+    hasDataEdge(FILE_ID, "reviewTargets", GATE_ID, "reviewTargets"),
+    "the filed bodies' review targets no longer flow into the gate",
+  );
+  assert.equal(refs.apply, undefined, "the retired apply step is still defined");
+  assert.ok(!(oas.nodes ?? []).some((n) => n.$component_ref === "apply"), "the retired apply step is still listed");
+  assert.ok(!oasText.includes("email_outreach_initial_drafts_update"), "the flow still edits the drafts in place");
+});
+
+test("B5: the declared production is filed by the list step, and the end hands its bodies on", () => {
+  const declared = pkg.cinatra?.produces ?? [];
+  assert.deepEqual(declared, [{ extension: "@cinatra-ai/email-artifacts", objectTypeId: "@cinatra-ai/email:body" }]);
+  const input = refs[FILE_ID]?.data?.input ?? {};
+  assert.equal(refs[FILE_ID]?.data?.tool, "artifact_materialize");
+  assert.equal(input.extension, declared[0].extension);
+  assert.equal(input.objectTypeId, declared[0].objectTypeId);
+  // No end binding files one combined document any more.
+  const bindings = (refs.end?.outputs ?? []).map((o) => o?.cinatra?.artifact).filter(Boolean);
+  assert.deepEqual(bindings, []);
+  assert.ok(
+    hasDataEdge(FILE_ID, "artifacts", "end", "approvedBodyArtifacts"),
+    "the filed bodies no longer reach the end",
   );
 });

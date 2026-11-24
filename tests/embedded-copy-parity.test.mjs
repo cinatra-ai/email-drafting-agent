@@ -4,15 +4,16 @@
 // embedded copy of this flow. The fixture
 // tests/fixtures/email-outreach-drafting-subflow.json is that copy taken whole:
 // the value of "email-drafting-subflow" that the outreach pack's generator
-// (scripts/embedded-copies.mjs --write) writes from this flow with the drafts
-// review's read step (cinatra-ai/cinatra#3089).
+// (scripts/embedded-copies.mjs) writes from this flow once each body is filed
+// and reviewed by the host (cinatra-ai/cinatra#3089): the outreach's declared
+// differences, with the retired apply step's entries carried to the review.
 //
 // This flow is the source of truth the copy is re-inlined from, so it must
 // carry everything the copy carries. The rule is CONTAINS: with the copy's id
 // prefix "drafts-" stripped, every step of the copy is a step of this flow,
 // and each carries every key and every titled entry the copy's step carries,
 // with equal scalar values. Extra keys and extra entries are allowed: this flow
-// keeps its own apply step, its closing sentence and its end binding. The draft
+// keeps its own closing sentence and the end outputs the outreach omits. The draft
 // step's prompt texts (data.system, data.user) are not compared word for word;
 // the declared outputs they name are.
 
@@ -131,10 +132,10 @@ test("(7) every data edge of the copy is a data edge of this flow", () => {
 test("(7) every control edge of the copy is one of this flow, but the review's own road on", () => {
   const have = controlEdgesOf(oas);
   // The copy's review goes straight to its end; this flow's review goes on to
-  // its own apply step, closing sentence and end.
+  // its own closing sentence and end.
   const missing = [...controlEdgesOf(copy)]
     .filter((edge) => edge !== "approval_gate -> end")
     .filter((edge) => !have.has(edge));
-  if (!have.has("approval_gate -> apply")) missing.push("approval_gate -> apply");
+  if (!have.has("approval_gate -> drafting_summary")) missing.push("approval_gate -> drafting_summary");
   assert.deepEqual(missing, [], "this flow lacks the copy's control edges: " + missing.join("; "));
 });

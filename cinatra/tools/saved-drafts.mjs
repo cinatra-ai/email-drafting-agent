@@ -1,17 +1,18 @@
-// Declared module of the drafting agent: hands the drafts review the drafts
-// the run saved.
+// Declared module of the drafting agent: hands the flow the drafts the run
+// saved.
 //
 // The draft step saves the drafted emails as one draft bundle object and
-// passes on only its reference. The drafts review's screen reads the drafts
-// from the gate's `draftBundle.draftedEmails` and fetches nothing itself. The
-// flow calls this module through its read step, between the draft step and
-// the review: the module reads the saved bundle through the objects port and
-// returns it as `draftBundle`, with the drafts under `draftedEmails`, in the
-// order the bundle saved them.
+// passes on only its reference. The flow calls this module through its read
+// step, between the draft step and the filing of the bodies: the module reads
+// the saved bundle through the objects port and returns it as `draftBundle`,
+// with the drafts under `draftedEmails`, in the order the bundle saved them.
+// The next step files each draft's `body` as its own email body, titled by its
+// `subject`, for the host's review (cinatra-ai/cinatra#3089). The module also
+// returns `recipients`: one { name, email, company } per draft, in draft order.
 //
-// Each draft keeps the fields the screen reads and the review's write-back
-// matches on, as the bundle saved them: the id, the recipient, the subject and
-// the body. Nothing else of the saved object reaches the screen. The module
+// Each draft keeps the fields the review and the write-back read, as the
+// bundle saved them: the id, the recipient (with its company), the subject and
+// the body. Nothing else of the saved object is handed on. The module
 // reads only data fields that the saved object holds itself: an object or a
 // list with another prototype, an inherited field, or a getter or a setter is
 // refused, and no getter is run. The port answers with data parsed from
@@ -47,7 +48,7 @@
 // no time limit of its own on the read.
 
 const DRAFT_BUNDLE_TYPE = "@cinatra-ai/campaigns:email-draft-bundle";
-const TEXT_FIELDS = ["id", "recipientId", "recipientName", "recipientEmail", "subject", "body", "status"];
+const TEXT_FIELDS = ["id", "recipientId", "recipientName", "recipientEmail", "recipientCompany", "subject", "body", "status"];
 // The order in which the screen takes a draft's key, and the lists the write-back looks for, in its order.
 const KEY_FIELDS = ["id", "recipientId", "recipientEmail"];
 const WRITE_BACK_LISTS = ["draftedEmails", "sequence", "followups", "drafts", "confirmedRecipients"];
@@ -185,5 +186,11 @@ export async function extensionTool({ input, ports }) {
     draftedEmails.push(draft);
   }
 
-  return { ok: true, draftBundle: { draftedEmails } };
+  // The recipients the flow hands on, one per draft and in draft order: a field the draft does not hold is "".
+  const recipients = draftedEmails.map((draft) => ({
+    name: draft.recipientName ?? "",
+    email: draft.recipientEmail ?? "",
+    company: draft.recipientCompany ?? "",
+  }));
+  return { ok: true, draftBundle: { draftedEmails }, recipients };
 }

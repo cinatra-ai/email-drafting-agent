@@ -1,6 +1,6 @@
 {
   "name": "@cinatra-ai/email-drafting-agent",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "license": "Apache-2.0",
   "files": [
     "cinatra"
@@ -24,14 +24,6 @@
         },
         "requirement": "required",
         "kind": "artifact"
-      }
-    ],
-    "fieldRenderers": [
-      {
-        "id": "@cinatra-ai/email-drafting-agent:output",
-        "kind": "email-drafts-review",
-        "priority": 80,
-        "a2uiTranslator": "drafts-output"
       }
     ],
     "consumes": [],

@@ -153,20 +153,13 @@ const recordsIntent = (prop) =>
   typeof prop?.description === "string" &&
   FREE_FORM_WORDS.some((word) => prop.description.toLowerCase().includes(word));
 
-/** The shape the `draft` node's own system prompt spells out on its return line. */
+/** The top-level keys the `draft` node's own system prompt spells out on its return line. */
 function promptShape() {
   const system = nodeById.get("draft")?.data?.system;
   assert.equal(typeof system, "string", "the draft node carries a system prompt");
   const line = system.match(/Return ONLY this JSON[^{\n]*(\{.+?\})\./);
   assert.ok(line, "the prompt spells the returned shape out on its return line");
-  const spelled = line[1];
-  const itemBlock = spelled.match(/\[\{(.*?)\}\]/);
-  assert.ok(itemBlock, "the prompt spells the body-artifact item out");
-  const keysOf = (text) => [...text.matchAll(/"([A-Za-z0-9_]+)":/g)].map((m) => m[1]);
-  return {
-    top: keysOf(spelled.replace(/\[\{.*?\}\]/, "[]")),
-    item: keysOf(`{${itemBlock[1]}}`),
-  };
+  return { top: [...line[1].matchAll(/"([A-Za-z0-9_]+)":/g)].map((m) => m[1]) };
 }
 
 test("no bridge output of this flow leaves a level without declared members", () => {
@@ -185,23 +178,21 @@ test("no bridge output of this flow leaves a level without declared members", ()
   );
 });
 
-test("the draft node's draftBundle declares the members its consumers read", () => {
-  // The draft hands the review its body artifacts: the outreach contract of
-  // cinatra-ai/email-outreach-agent#50 (items 3 and 5) supersedes draftBundle.
-  const artifacts = output("draft", "draftBodyArtifacts");
-  assert.ok(artifacts, "the flow carries the draft bridge node's draftBodyArtifacts output");
-  assert.equal(artifacts.type, "array");
-
-  const item = declaredItems(artifacts);
-  assert.ok(item, "the body-artifact list declares its item shape");
-  const fields = declaredMembers(item);
-  assert.ok(fields, "the body-artifact item declares its members");
-  assert.deepEqual(Object.keys(fields).sort(), ["artifactId", "representationRevisionId"]);
-  for (const [name, field] of Object.entries(fields))
-    assert.equal(field.type, "string", `${name} is declared a string`);
+// cinatra-ai/cinatra#3089: the draft step no longer returns body artifacts of
+// its own. The host files each saved body (the flow's file_drafts step), so the
+// model is never asked for artifact ids it could only invent.
+test("the draft node returns no body artifacts of its own", () => {
+  assert.equal(output("draft", "draftBodyArtifacts"), undefined);
+  const system = nodeById.get("draft")?.data?.system;
+  assert.ok(!system.includes("draftBodyArtifacts"), "the prompt still asks the model for draftBodyArtifacts");
+  assert.deepEqual(
+    promptShape().top.filter((key) => /artifact|revision/i.test(key)),
+    [],
+    "the prompt's return line still asks the model for artifact ids",
+  );
 });
 
-test("the declared members are the shape the node's own system prompt spells out", () => {
+test("the declared outputs are the shape the node's own system prompt spells out", () => {
   const spelled = promptShape();
   assert.deepEqual(
     outputs("draft")
@@ -209,10 +200,6 @@ test("the declared members are the shape the node's own system prompt spells out
       .filter((title) => !spelled.top.includes(title)),
     [],
     "every declared output of the draft is named on the prompt's return line",
-  );
-  assert.deepEqual(
-    Object.keys(declaredMembers(declaredItems(output("draft", "draftBodyArtifacts")))).sort(),
-    [...spelled.item].sort(),
   );
 });
 

@@ -67,7 +67,34 @@ test("D1 the saved drafts are handed under draftBundle.draftedEmails, in saved o
   const { ports, calls } = makePorts({ saved: bundleOf({ cinatra_agent_run_id: "run-1", drafts: DRAFTS }) });
   const answer = await extensionTool({ input: { draftBundleRef: " bundle-1 " }, ports });
   assert.deepEqual(calls.reads, [{ objectId: "bundle-1" }]);
-  assert.deepEqual(answer, { ok: true, draftBundle: { draftedEmails: DRAFTS } });
+  assert.deepEqual(answer, {
+    ok: true,
+    draftBundle: { draftedEmails: DRAFTS },
+    recipients: [
+      { name: "", email: "ada@example.com", company: "" },
+      { name: "Ben", email: "ben@example.com", company: "" },
+    ],
+  });
+});
+
+// The parent's publish card names who each draft goes to (cinatra-ai/cinatra#3089): one recipient per draft, in draft
+// order, with its name, email and company as the draft saved them, and "" for a field the draft does not hold.
+test("D31 the recipients are handed on, one per draft and in draft order, with their company", async () => {
+  const text = { subject: "Idea thirteen", status: "draft" };
+  const drafts = [
+    { recipientId: "c-1", recipientName: "Ada", recipientEmail: "ada@example.com", recipientCompany: "Acme", body: "Hello Ada", ...text },
+    { recipientId: "c-2", recipientName: "Ben", recipientEmail: "", body: "Hello Ben", ...text },
+    { recipientId: "c-3", recipientCompany: 7, recipientEmail: "cy@example.com", body: "Hello Cy", ...text },
+  ];
+  const answer = await readOf({ drafts });
+  assert.deepEqual(answer.recipients, [
+    { name: "Ada", email: "ada@example.com", company: "Acme" },
+    { name: "Ben", email: "", company: "" },
+    { name: "", email: "cy@example.com", company: "" },
+  ]);
+  // The company is kept on the draft as text only, like every other text field.
+  assert.equal(answer.draftBundle.draftedEmails[0].recipientCompany, "Acme");
+  assert.equal(Object.hasOwn(answer.draftBundle.draftedEmails[2], "recipientCompany"), false);
 });
 
 test("D2 a bundle that saved its drafts under draftedEmails is read from there first", async () => {
