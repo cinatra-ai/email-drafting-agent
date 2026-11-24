@@ -107,9 +107,23 @@ test("the filed bytes are exactly each saved draft's body, in draft order, title
     { recipientId: "c-2", recipientName: "Ben", recipientEmail: "", subject: "Grüße", body: "Hallo Ben — \u{1F600}\r\nTabs\there", status: "draft" },
   ];
   const ports = {
-    objects: { read: async () => ({ objectId: "b-1", type: "@cinatra-ai/campaigns:email-draft-bundle", data: { drafts } }) },
+    objects: {
+      read: async ({ objectId }) =>
+        objectId === "l-1"
+          ? {
+              objectId: "l-1",
+              type: "@cinatra-ai/campaigns:recipients",
+              data: {
+                confirmedRecipients: [
+                  { contactId: "c-1", name: "Ada", email: "ada@example.com" },
+                  { contactId: "c-2", name: "Ben", email: "" },
+                ],
+              },
+            }
+          : { objectId: "b-1", type: "@cinatra-ai/campaigns:email-draft-bundle", data: { drafts } },
+    },
   };
-  const answer = await extensionTool({ input: { draftBundleRef: "b-1" }, ports });
+  const answer = await extensionTool({ input: { draftBundleRef: "b-1", confirmedRecipientsRef: "l-1" }, ports });
   const members = shapeMembers(jinjaToJson(answer.draftBundle.draftedEmails));
   assert.deepEqual(members, drafts.map((d) => ({ title: d.subject, content: d.body })));
   for (const [index, member] of members.entries()) {
@@ -156,6 +170,16 @@ test("the end hands the parent's publish card the recipients, the approved bodie
   // The bodies reach the end only through the review: the end follows the gate.
   assert.ok(controlEdges.includes(`${GATE_ID} -> drafting_summary`));
   assert.ok(controlEdges.includes("drafting_summary -> end"));
+});
+
+// The recipients handed on are bound to the approved recipient list, never taken from the fields the draft step wrote:
+// the read step gets the run's approved list reference from the start, the one the draft step reads.
+test("the read step gets the run's approved recipient list from the start", () => {
+  const read = refs.read_drafts;
+  assert.equal(read.data.input.input.confirmedRecipientsRef, "{{ confirmedRecipientsRef }}");
+  assert.ok(read.inputs.some((i) => i.title === "confirmedRecipientsRef" && i.type === "string"));
+  assert.ok(feeds("start.confirmedRecipientsRef", "read_drafts.confirmedRecipientsRef"));
+  assert.ok(feeds("start.confirmedRecipientsRef", "draft.confirmedRecipientsRef"));
 });
 
 test("the draft step saves each recipient's company for the publish card", () => {

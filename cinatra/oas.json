@@ -447,6 +447,18 @@
     },
     {
       "component_type": "DataFlowEdge",
+      "name": "start_to_read_drafts_confirmedRecipientsRef",
+      "source_node": {
+        "$component_ref": "start"
+      },
+      "source_output": "confirmedRecipientsRef",
+      "destination_node": {
+        "$component_ref": "read_drafts"
+      },
+      "destination_input": "confirmedRecipientsRef"
+    },
+    {
+      "component_type": "DataFlowEdge",
       "name": "start_to_draft_campaignId",
       "source_node": {
         "$component_ref": "start"
@@ -759,7 +771,8 @@
         "input": {
           "name": "saved_drafts",
           "input": {
-            "draftBundleRef": "{{ draftBundleRef }}"
+            "draftBundleRef": "{{ draftBundleRef }}",
+            "confirmedRecipientsRef": "{{ confirmedRecipientsRef }}"
           }
         },
         "agent_run_id": "{{ agent_run_id }}"
@@ -772,6 +785,11 @@
         },
         {
           "title": "draftBundleRef",
+          "type": "string",
+          "default": ""
+        },
+        {
+          "title": "confirmedRecipientsRef",
           "type": "string",
           "default": ""
         }
@@ -813,7 +831,7 @@
         "cinatra": {
           "riskClass": "read_only",
           "requiresApproval": false,
-          "description": "The agent reads the drafts this run saved, so the bodies filed for the review and handed on are the drafts the send acts on. It also hands on each draft's recipient (name, email, company), in draft order. A saved bundle that is missing, holds no drafts or has a draft without a recipient ends the run with its reason before anything is filed."
+          "description": "The agent reads the drafts this run saved, so the bodies filed for the review and handed on are the drafts the send acts on. It binds each draft to exactly one recipient of the run's approved recipient list and hands on each draft's recipient (name, email, company) as the approved list names it, in draft order. A saved bundle that is missing or holds no drafts, a draft for a contact that is not approved or with an address or name that is not the approved one, two drafts for one recipient, and an approved recipient without a draft end the run with the reason before anything is filed."
         }
       }
     },
