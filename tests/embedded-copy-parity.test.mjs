@@ -116,6 +116,27 @@ test("(7) every step of the embedded copy is a step of this flow, carrying all i
   assert.deepEqual(missing, [], "this flow lacks what the embedded copy carries: " + missing.join("; "));
 });
 
+// The prefix strip above would hide a filing step whose node_id kept the
+// child's unprefixed id. The host requires that input to equal the step's own
+// id (its idempotency identity), so it is read here from the copy as written.
+test("(7) every filing step of the copy and of this flow names its own step id as node_id", () => {
+  const filingSteps = (flow) =>
+    Object.entries(flow.$referenced_components ?? {}).filter(
+      ([, step]) => step?.data?.tool === "artifact_materialize",
+    );
+  const copySteps = filingSteps(rawCopy);
+  assert.ok(copySteps.length > 0, "the copy has no filing step");
+  for (const [flow, steps] of [
+    ["copy", copySteps],
+    ["flow", filingSteps(oas)],
+  ]) {
+    for (const [key, step] of steps) {
+      assert.equal(step.id, key, `${flow} ${key}: the step id is not its key`);
+      assert.equal(step.data.input?.node_id, key, `${flow} ${key}: node_id is not the step's own id`);
+    }
+  }
+});
+
 test("(7) the flow takes every input and hands on every output the copy does", () => {
   const missing = [];
   contains(oas.inputs ?? [], copy.inputs ?? [], "inputs", missing);

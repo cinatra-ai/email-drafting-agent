@@ -801,7 +801,7 @@
           "content": "{# pyagentspec-input-hint (do not remove): {{ draftBundle }} #}{{ draftBundle.draftedEmails | tojson }}",
           "memberContentField": "body",
           "memberTitleField": "subject",
-          "node_id": "file_drafts"
+          "node_id": "drafts-file_drafts"
         },
         "agent_run_id": "{{ agent_run_id }}"
       },
