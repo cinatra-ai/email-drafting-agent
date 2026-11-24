@@ -53,8 +53,9 @@ const TEXT_FIELDS = ["id", "recipientId", "recipientName", "recipientEmail", "re
 const KEY_FIELDS = ["id", "recipientId", "recipientEmail"];
 const WRITE_BACK_LISTS = ["draftedEmails", "sequence", "followups", "drafts", "confirmedRecipients"];
 const SHOWN_LISTS = ["draftedEmails", "drafts"];
-// The most drafts the write-back takes in one answer (DRAFTS_PERSIST_MAX_BATCH of the platform's persist).
-const WRITE_BACK_MAX_DRAFTS = 2000;
+// The most bodies the filing step takes in one call (MAX_MATERIALIZE_LIST_MEMBERS of the platform's
+// artifact-materialize-shaper.ts). It is below the write-back's own bound of 2000 drafts per answer.
+const MAX_FILED_DRAFTS = 50;
 
 class ExtensionToolCallRefusal extends Error {
   constructor(message) {
@@ -96,6 +97,17 @@ const listOf = (value) => {
 
 const nonEmpty = (value) => typeof value === "string" && value.trim() !== "";
 
+// A body as the host compares it: its UTF-8 bytes, as hex. Never the string, which can differ where the bytes do not.
+const ENCODER = new TextEncoder();
+const bytesKey = (text) => Array.from(ENCODER.encode(text), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+// How a person finds a draft's recipient: its email, else its name, else its key; short and on one line.
+const recipientLabel = (draft) => {
+  const text = [draft.recipientEmail, draft.recipientName, draft.recipientId, draft.id].find((value) => nonEmpty(value)) ?? "no name";
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > 60 ? `${line.slice(0, 57)}...` : line;
+};
+
 export async function extensionTool({ input, ports }) {
   const ref = input?.draftBundleRef;
   const bundleRef = nonEmpty(ref) ? ref.trim() : undefined;
@@ -123,15 +135,16 @@ export async function extensionTool({ input, ports }) {
   if (rows.length === 0) {
     throw new ExtensionToolCallRefusal("The saved draft bundle of this run holds no drafts to review.");
   }
-  if (rows.length > WRITE_BACK_MAX_DRAFTS) {
+  if (rows.length > MAX_FILED_DRAFTS) {
     throw new ExtensionToolCallRefusal(
-      `The saved draft bundle of this run holds ${rows.length} drafts, more than the ${WRITE_BACK_MAX_DRAFTS} the drafts review can save back.`,
+      `The saved draft bundle of this run holds ${rows.length} drafts, more than the ${MAX_FILED_DRAFTS} that one run can file for review. Draft for at most ${MAX_FILED_DRAFTS} recipients.`,
     );
   }
 
   const draftedEmails = [];
   const byKey = new Map();
   const byEmail = new Map();
+  const byBody = new Map();
   for (let index = 0; index < rows.length; index += 1) {
     const position = index + 1;
     const fields = recordOf(rows.at(index));
@@ -152,6 +165,12 @@ export async function extensionTool({ input, ports }) {
     if (typeof fields.get("subject") !== "string" || typeof fields.get("body") !== "string") {
       throw new ExtensionToolCallRefusal(
         `Draft ${position} of this run has a subject or a body that is not text, so the drafts review is not shown.`,
+      );
+    }
+    // The filing titles the body by the subject, and the host refuses a blank title (it trims, so does this).
+    if (!nonEmpty(fields.get("subject"))) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run has a blank subject, so the filing of its body is not possible. Give it a subject.`,
       );
     }
     const draft = {};
@@ -183,6 +202,15 @@ export async function extensionTool({ input, ports }) {
       }
       byEmail.set(draft.recipientEmail, position);
     }
+    // The host refuses two bodies with the same bytes: they would be one artifact.
+    const bodyKey = bytesKey(draft.body);
+    if (byBody.has(bodyKey)) {
+      const earlier = byBody.get(bodyKey);
+      throw new ExtensionToolCallRefusal(
+        `Drafts ${earlier.position} and ${position} of this run have the same body, so the filing would make them one email body: ${earlier.label} and ${recipientLabel(draft)}. Change the body of one of them.`,
+      );
+    }
+    byBody.set(bodyKey, { position, label: recipientLabel(draft) });
     draftedEmails.push(draft);
   }
 

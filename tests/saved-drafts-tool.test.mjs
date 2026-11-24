@@ -2,9 +2,9 @@
 // through the objects port and hands its drafts to the drafts review under
 // draftBundle.draftedEmails; a missing reference, an object that is no draft
 // bundle, a bundle without drafts, a draft without a recipient or without
-// subject and body text, a draft whose id is empty or not text, two
-// drafts the review cannot tell apart, and a bundle of more drafts than the
-// write-back takes are refused by name - cinatra-ai/cinatra#3089.
+// subject and body text, a draft with a blank subject, a draft whose id is empty or not text, two
+// drafts the review cannot tell apart, two drafts with the same body bytes, and a bundle of more drafts than the
+// filing takes (50) are refused by name - cinatra-ai/cinatra#3089.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -170,7 +170,7 @@ test("D7 a draft that is not a draft, or names no recipient, is refused with its
 });
 
 test("D8 a followUpDay that is not a finite number is not handed on", async () => {
-  const rowOf = (i) => ({ recipientEmail: `dee${i}@example.com`, subject: "Idea four", body: "Hello Dee" });
+  const rowOf = (i) => ({ recipientEmail: `dee${i}@example.com`, subject: "Idea four", body: `Hello Dee ${i}` });
   const days = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "3", null, true];
   const { ports } = makePorts({ saved: bundleOf({ drafts: days.map((followUpDay, i) => ({ ...rowOf(i), followUpDay })) }) });
   const answer = await extensionTool({ input: { draftBundleRef: "bundle-1" }, ports });
@@ -310,26 +310,28 @@ test("D20 a draft whose subject or body is not text is refused with its position
   for (const row of cases) {
     await assert.rejects(readOf({ drafts: [DRAFTS[0], row] }), refused(/^Draft 2 of this run has a subject or a body that is not text/));
   }
-  // Empty text is text: the screen shows it as saved, and the send reads the same.
-  const empty = { ...base, subject: "", body: "" };
-  const answer = await readOf({ drafts: [empty] });
-  assert.deepEqual(answer.draftBundle.draftedEmails, [empty]);
+  // An empty body is text: the filing takes it as one body. An empty subject is not: it is the filed body's title.
+  const emptyBody = { ...base, subject: "Idea eight", body: "" };
+  const answer = await readOf({ drafts: [emptyBody] });
+  assert.deepEqual(answer.draftBundle.draftedEmails, [emptyBody]);
 });
 
 test("D21 two drafts that the review would show under one id, or that name one recipient email, are refused", async () => {
   const text = { subject: "Idea nine", body: "Hello" };
+  // The second draft of each pair has a body of its own, so that only its key or its email can refuse the pair.
+  const other = { subject: "Idea nine", body: "Hello again" };
   const cases = [
-    [{ recipientEmail: "shared@example.com", ...text }, { recipientEmail: "shared@example.com", ...text, subject: "Second" }],
-    [{ id: "x@example.com", recipientEmail: "gil@example.com", ...text }, { recipientEmail: "x@example.com", ...text }],
-    [{ id: "d-1", ...text }, { recipientId: "d-1", ...text }],
-    [{ recipientEmail: "hal@example.com", ...text }, { id: "d-2", recipientEmail: "hal@example.com", ...text }],
-    [{ recipientId: "", recipientEmail: "ivy@example.com", ...text }, { recipientId: "", recipientEmail: "jon@example.com", ...text }],
+    [{ recipientEmail: "shared@example.com", ...text }, { recipientEmail: "shared@example.com", ...other, subject: "Second" }],
+    [{ id: "x@example.com", recipientEmail: "gil@example.com", ...text }, { recipientEmail: "x@example.com", ...other }],
+    [{ id: "d-1", ...text }, { recipientId: "d-1", ...other }],
+    [{ recipientEmail: "hal@example.com", ...text }, { id: "d-2", recipientEmail: "hal@example.com", ...other }],
+    [{ recipientId: "", recipientEmail: "ivy@example.com", ...text }, { recipientId: "", recipientEmail: "jon@example.com", ...other }],
   ];
   for (const drafts of cases) {
     await assert.rejects(readOf({ drafts }), refused(/^Drafts 1 and 2 of this run /));
   }
   // Distinct ids with distinct emails pass, whichever field names each one.
-  const distinct = [{ id: "d-1", recipientEmail: "kim@example.com", ...text }, { recipientId: "d-2", ...text }, { recipientEmail: "lea@example.com", ...text }];
+  const distinct = [{ id: "d-1", recipientEmail: "kim@example.com", ...text }, { recipientId: "d-2", ...other }, { recipientEmail: "lea@example.com", ...text, body: "Hello third" }];
   const answer = await readOf({ drafts: distinct });
   assert.deepEqual(answer.draftBundle.draftedEmails, distinct);
 });
@@ -387,17 +389,81 @@ test("D25 a draft whose id is present but empty or not text is refused with its 
   assert.deepEqual(answer.draftBundle.draftedEmails, [{ recipientId: "r-1", ...text }]);
 });
 
-// The write-back refuses an answer of more than 2000 reviewed drafts (DRAFTS_PERSIST_MAX_BATCH of the platform's
-// drafts-persist-handler.ts), and the screen answers with every draft it shows. A bundle of more drafts would show a
-// review whose answer the write-back refuses, so the review could never complete.
-test("D26 a bundle of more drafts than the write-back takes (2000) is refused before the review", async () => {
-  const many = (n) => Array.from({ length: n }, (_, i) => ({ id: `d-${i + 1}`, subject: "", body: "" }));
-  await assert.rejects(readOf({ drafts: many(2001) }), refused(/^The saved draft bundle of this run holds 2001 drafts, more than the 2000 /));
-  await assert.rejects(readOf({ draftedEmails: many(2500) }), refused(/ holds 2500 drafts, /));
-  // Exactly 2000 drafts pass, each as saved.
-  const answer = await readOf({ drafts: many(2000) });
-  assert.equal(answer.draftBundle.draftedEmails.length, 2000);
-  assert.deepEqual(answer.draftBundle.draftedEmails[1999], { id: "d-2000", subject: "", body: "" });
+// The filing step files at most 50 bodies in one call (MAX_MATERIALIZE_LIST_MEMBERS of the platform's
+// artifact-materialize-shaper.ts), one per draft. A bundle of more drafts would pass the read and be refused at the
+// filing, with the platform's error and after the run's work, so the read refuses it by its count.
+test("D26 a bundle of more drafts than the filing takes (50) is refused with the limit and the count", async () => {
+  const many = (n) => Array.from({ length: n }, (_, i) => ({ id: `d-${i + 1}`, subject: `Idea ${i + 1}`, body: `Hello ${i + 1}` }));
+  await assert.rejects(readOf({ drafts: many(51) }), refused(/^The saved draft bundle of this run holds 51 drafts, more than the 50 /));
+  await assert.rejects(readOf({ draftedEmails: many(2500) }), refused(/ holds 2500 drafts, more than the 50 /));
+  // Exactly 50 drafts pass, each as saved.
+  const answer = await readOf({ drafts: many(50) });
+  assert.equal(answer.draftBundle.draftedEmails.length, 50);
+  assert.deepEqual(answer.draftBundle.draftedEmails[49], { id: "d-50", subject: "Idea 50", body: "Hello 50" });
+});
+
+// The filing titles each body by its draft's subject, and the platform refuses a blank title (the check is a trim).
+test("D32 a draft with a blank subject is refused with its position", async () => {
+  for (const subject of ["", "   ", "\t\n", "\u00a0\ufeff"]) {
+    await assert.rejects(
+      readOf({ drafts: [DRAFTS[0], { recipientEmail: "fay@example.com", subject, body: "Hello Fay" }] }),
+      refused(/^Draft 2 of this run has a blank subject, so the filing of its body is not possible/),
+    );
+  }
+  // A subject with text around its spaces is a title, as the platform trims it.
+  const padded = { recipientEmail: "fay@example.com", subject: "  Idea  ", body: "Hello Fay" };
+  assert.deepEqual((await readOf({ drafts: [padded] })).draftBundle.draftedEmails, [padded]);
+});
+
+// The platform stores each body as UTF-8 bytes and refuses two bodies with the same bytes. A person has to change one
+// of the two drafts, so the refusal names both.
+test("D33 two drafts with the same body are refused, naming both drafts and their recipients", async () => {
+  const drafts = [
+    { id: "d-1", recipientName: "Ada", recipientEmail: "ada@example.com", subject: "One", body: "Same text" },
+    { id: "d-2", recipientEmail: "ben@example.com", subject: "Two", body: "Other text" },
+    { id: "d-3", recipientName: "Cy", recipientEmail: "cy@example.com", subject: "Three", body: "Same text" },
+  ];
+  await assert.rejects(
+    readOf({ drafts }),
+    (error) => {
+      assertRefusal(error);
+      assert.match(error.message, /^Drafts 1 and 3 of this run have the same body, so the filing would make them one email body: /);
+      assert.ok(error.message.includes("ada@example.com") && error.message.includes("cy@example.com"));
+      assert.ok(!error.message.includes("ben@example.com"));
+      return true;
+    },
+  );
+  // The empty body is a body: two of them are the same body.
+  await assert.rejects(
+    readOf({ drafts: [{ id: "a", subject: "A", body: "" }, { id: "b", subject: "B", body: "" }] }),
+    refused(/^Drafts 1 and 2 of this run have the same body/),
+  );
+  // The same subject is no collision: the title is not the key.
+  const answer = await readOf({ drafts: [{ id: "a", subject: "Same", body: "One" }, { id: "b", subject: "Same", body: "Two" }] });
+  assert.equal(answer.draftBundle.draftedEmails.length, 2);
+});
+
+// The comparison is of UTF-8 bytes, as the platform's: a leading byte order mark is a byte sequence of its own, and an
+// unpaired surrogate is written as U+FFFD, so it has the bytes of that character.
+test("D34 bodies differing only by a leading byte order mark are two bodies", async () => {
+  const drafts = [
+    { id: "a", subject: "A", body: "Hello" },
+    { id: "b", subject: "B", body: "\ufeffHello" },
+  ];
+  assert.equal((await readOf({ drafts })).draftBundle.draftedEmails.length, 2);
+});
+
+test("D35 bodies that differ as strings but have the same UTF-8 bytes are refused", async () => {
+  const cases = [
+    ["a\ud800b", "a\udc00b"],
+    ["a\ud800b", "a\ufffdb"],
+  ];
+  for (const [first, second] of cases) {
+    await assert.rejects(
+      readOf({ drafts: [{ id: "a", subject: "A", body: first }, { id: "b", subject: "B", body: second }] }),
+      refused(/^Drafts 1 and 2 of this run have the same body/),
+    );
+  }
 });
 
 test("D15 no other port is touched", () => {
@@ -421,14 +487,14 @@ test("D30 drafts for contacts without an email address are handed on under their
   const text = { subject: "Idea twelve", body: "Hello", status: "draft" };
   const drafts = [
     { recipientId: "c-1", recipientName: "Ada", recipientEmail: "ada@example.com", ...text },
-    { recipientId: "c-2", recipientName: "Ben", recipientEmail: "", ...text },
-    { recipientId: "c-3", recipientName: "Cy", recipientEmail: "", ...text },
+    { recipientId: "c-2", recipientName: "Ben", recipientEmail: "", ...text, body: "Hello Ben" },
+    { recipientId: "c-3", recipientName: "Cy", recipientEmail: "", ...text, body: "Hello Cy" },
   ];
   const answer = await readOf({ drafts });
   assert.deepEqual(answer.draftBundle.draftedEmails, drafts);
   // Without the recipientId, a draft with an empty email still names no recipient.
   await assert.rejects(
-    readOf({ drafts: [drafts[0], { recipientName: "Ben", recipientEmail: "", ...text }] }),
+    readOf({ drafts: [drafts[0], { recipientName: "Ben", recipientEmail: "", ...text, body: "Hello Ben" }] }),
     refused(/^Draft 2 of this run names no recipient/),
   );
   // Two drafts under one recipientId are still refused, with or without an email.

@@ -94,8 +94,9 @@ function shapeMembers(content) {
     const title = member[input.memberTitleField];
     assert.equal(typeof body, "string");
     assert.ok(typeof title === "string" && title.trim().length > 0);
-    assert.ok(!seen.has(body), "two members with the same bytes");
-    seen.add(body);
+    const bytes = Buffer.from(body, "utf8").toString("hex");
+    assert.ok(!seen.has(bytes), "two members with the same bytes");
+    seen.add(bytes);
     return { title: title.trim(), content: body };
   });
 }
