@@ -1,17 +1,50 @@
-// Declared module of the drafting agent: hands the drafts review the drafts
-// the run saved.
+// Declared module of the drafting agent: hands the flow the drafts the run
+// saved.
 //
 // The draft step saves the drafted emails as one draft bundle object and
-// passes on only its reference. The drafts review's screen reads the drafts
-// from the gate's `draftBundle.draftedEmails` and fetches nothing itself. The
-// flow calls this module through its read step, between the draft step and
-// the review: the module reads the saved bundle through the objects port and
-// returns it as `draftBundle`, with the drafts under `draftedEmails`, in the
-// order the bundle saved them.
+// passes on only its reference. The flow calls this module through its read
+// step, between the draft step and the filing of the bodies: the module reads
+// the saved bundle through the objects port and returns it as `draftBundle`,
+// with the drafts under `draftedEmails`, in the order the bundle saved them.
+// The next step files each draft's `body` as its own email body, titled by its
+// `subject`, for the host's review (cinatra-ai/cinatra#3089). The module also
+// returns `recipients`: one { name, email, company } per draft, in draft order.
 //
-// Each draft keeps the fields the screen reads and the review's write-back
-// matches on, as the bundle saved them: the id, the recipient, the subject and
-// the body. Nothing else of the saved object reaches the screen. The module
+// The draft step writes each draft's recipient fields itself, so they say
+// nothing about who may get the email: only the run's approved recipient list
+// does. The module reads that list (the confirmedRecipientsRef the draft step
+// reads too) through the objects port and binds each draft to exactly one
+// approved recipient by its contact: the draft's contactId, else its
+// recipientId, as the host's send reads it, against the row's contactId. A
+// draft for a contact that is not on the list, a draft that names two
+// different contacts, two drafts for one approved recipient, and an approved
+// recipient without a draft are refused, naming the recipient: the draft step
+// writes exactly one email per approved recipient, and a recipient left out
+// would get no email without anyone seeing why. A draft whose own recipient
+// email or name is not the approved recipient's is refused, naming the
+// recipient and the field and never the address the draft wrote: the send
+// mails the draft's own address. Emails are compared without the spaces
+// around them and without letter case, names without extra white space; the
+// company is not compared. The recipients handed on, and the recipient fields
+// of each draft handed on, are the approved recipient's: its name (or first
+// and last name), its email and its company (accountName, company or
+// companyName), "" where the list holds none. A draft keeps a recipient field
+// when the approved recipient has a value for it or the draft wrote it. A draft
+// that wrote only a contactId, or wrote its contact with spaces around it, is handed
+// on with the approved contact as its recipientId, exactly as the list writes it, so
+// that the screen keys it and the send finds the same person; no recipient field a
+// draft wrote survives but where the approved recipient holds no value for it. A
+// message that names a recipient uses the approved record's name, else its approved
+// address, and the checks that name one run only after every draft is bound: before
+// that, a refusal names a draft by its position only. A run
+// that names no list, a list that is not a recipient list, and a row that is
+// not a recipient or names no contact are refused, so the run ends with the
+// reason and nothing is filed. A contact that the list names twice is one
+// approved recipient, its first row.
+//
+// Each draft keeps the fields the review and the write-back read, as the
+// bundle saved them: the id, the recipient (with its company), the subject and
+// the body. Nothing else of the saved object is handed on. The module
 // reads only data fields that the saved object holds itself: an object or a
 // list with another prototype, an inherited field, or a getter or a setter is
 // refused, and no getter is run. The port answers with data parsed from
@@ -47,13 +80,15 @@
 // no time limit of its own on the read.
 
 const DRAFT_BUNDLE_TYPE = "@cinatra-ai/campaigns:email-draft-bundle";
-const TEXT_FIELDS = ["id", "recipientId", "recipientName", "recipientEmail", "subject", "body", "status"];
+const RECIPIENTS_LIST_TYPE = "@cinatra-ai/campaigns:recipients";
+const TEXT_FIELDS = ["id", "recipientId", "recipientName", "recipientEmail", "recipientCompany", "subject", "body", "status"];
 // The order in which the screen takes a draft's key, and the lists the write-back looks for, in its order.
 const KEY_FIELDS = ["id", "recipientId", "recipientEmail"];
 const WRITE_BACK_LISTS = ["draftedEmails", "sequence", "followups", "drafts", "confirmedRecipients"];
 const SHOWN_LISTS = ["draftedEmails", "drafts"];
-// The most drafts the write-back takes in one answer (DRAFTS_PERSIST_MAX_BATCH of the platform's persist).
-const WRITE_BACK_MAX_DRAFTS = 2000;
+// The most bodies the filing step takes in one call (MAX_MATERIALIZE_LIST_MEMBERS of the platform's
+// artifact-materialize-shaper.ts). It is below the write-back's own bound of 2000 drafts per answer.
+const MAX_FILED_DRAFTS = 50;
 
 class ExtensionToolCallRefusal extends Error {
   constructor(message) {
@@ -94,6 +129,67 @@ const listOf = (value) => {
 };
 
 const nonEmpty = (value) => typeof value === "string" && value.trim() !== "";
+const trimmedOrNone = (value) => (nonEmpty(value) ? value.trim() : undefined);
+const textOrEmpty = (value) => (typeof value === "string" ? value.trim() : "");
+const sameEmail = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+// The one comparable form of a name: one line, single spaces. Both sides of a name comparison take it, and the approved
+// name is handed on in it, whichever fields the name was built from.
+const oneLine = (text) => text.replace(/\s+/g, " ").trim();
+const short = (text) => {
+  const line = oneLine(text);
+  return line.length > 60 ? `${line.slice(0, 57)}...` : line;
+};
+
+// A body as the host compares it: its UTF-8 bytes, as hex. Never the string, which can differ where the bytes do not.
+const ENCODER = new TextEncoder();
+const bytesKey = (text) => Array.from(ENCODER.encode(text), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+// The approved recipients by contact, in list order: { contact, name, email, company }. The first row of a contact is
+// the approved one.
+const approvedRecipients = (list) => {
+  const notAList = () => new ExtensionToolCallRefusal("The approved recipient list of this run is not a recipient list.");
+  const answer = list === null || list === undefined ? undefined : recordOf(list);
+  if (answer === undefined || answer.get("type") !== RECIPIENTS_LIST_TYPE) throw notAList();
+  const data = recordOf(answer.get("data"));
+  if (data === undefined) throw notAList();
+  const key = ["confirmedRecipients", "recipients"].find((field) => Array.isArray(data.get(field)));
+  const rows = key === undefined ? undefined : listOf(data.get(key));
+  if (rows === undefined) throw notAList();
+  const byContact = new Map();
+  for (let index = 0; index < rows.length; index += 1) {
+    const fields = recordOf(rows.at(index));
+    const contact = fields === undefined ? undefined : trimmedOrNone(fields.get("contactId"));
+    if (contact === undefined) {
+      throw new ExtensionToolCallRefusal(
+        `Approved recipient ${index + 1} of this run names no contact, so no draft can be bound to it.`,
+      );
+    }
+    if (byContact.has(contact)) continue;
+    const name = oneLine(
+      textOrEmpty(fields.get("name")) || [fields.get("firstName"), fields.get("lastName")].map(textOrEmpty).join(" "),
+    );
+    const email = textOrEmpty(fields.get("email")) || textOrEmpty(fields.get("recipientEmail"));
+    const company =
+      textOrEmpty(fields.get("accountName")) || textOrEmpty(fields.get("company")) || textOrEmpty(fields.get("companyName"));
+    byContact.set(contact, { contact, name, email, company });
+  }
+  return byContact;
+};
+
+// How a person finds an approved recipient: its name, else its approved address, else its contact. Every message that
+// names a recipient builds the name from the approved record, never from a field the draft wrote.
+const approvedLabel = (recipient) => short(recipient.name || recipient.email || recipient.contact);
+
+// A draft's contact, defined once and used everywhere: its contactId, else its recipientId (each trimmed), as the host's
+// send reads it. A draft that names two different contacts has no one contact: `conflict` is true.
+const draftContact = (fields) => {
+  const contactId = trimmedOrNone(fields.get("contactId"));
+  const recipientId = trimmedOrNone(fields.get("recipientId"));
+  return {
+    contact: contactId ?? recipientId,
+    conflict: contactId !== undefined && recipientId !== undefined && contactId !== recipientId,
+  };
+};
 
 export async function extensionTool({ input, ports }) {
   const ref = input?.draftBundleRef;
@@ -122,25 +218,20 @@ export async function extensionTool({ input, ports }) {
   if (rows.length === 0) {
     throw new ExtensionToolCallRefusal("The saved draft bundle of this run holds no drafts to review.");
   }
-  if (rows.length > WRITE_BACK_MAX_DRAFTS) {
+  if (rows.length > MAX_FILED_DRAFTS) {
     throw new ExtensionToolCallRefusal(
-      `The saved draft bundle of this run holds ${rows.length} drafts, more than the ${WRITE_BACK_MAX_DRAFTS} the drafts review can save back.`,
+      `The saved draft bundle of this run holds ${rows.length} drafts, more than the ${MAX_FILED_DRAFTS} that one run can file for review. Draft for at most ${MAX_FILED_DRAFTS} recipients.`,
     );
   }
 
+  // Each draft as the module hands it on, read as data; its position is all a refusal says of it until it is bound.
   const draftedEmails = [];
-  const byKey = new Map();
-  const byEmail = new Map();
+  const draftFields = [];
   for (let index = 0; index < rows.length; index += 1) {
     const position = index + 1;
     const fields = recordOf(rows.at(index));
     if (fields === undefined) {
       throw new ExtensionToolCallRefusal(`Draft ${position} of this run is not a draft, so the drafts review is not shown.`);
-    }
-    if (!KEY_FIELDS.some((field) => nonEmpty(fields.get(field)))) {
-      throw new ExtensionToolCallRefusal(
-        `Draft ${position} of this run names no recipient, so the drafts review is not shown.`,
-      );
     }
     const id = fields.get("id");
     if (id !== undefined && id !== null && (typeof id !== "string" || id.length === 0)) {
@@ -153,13 +244,96 @@ export async function extensionTool({ input, ports }) {
         `Draft ${position} of this run has a subject or a body that is not text, so the drafts review is not shown.`,
       );
     }
+    // The filing titles the body by the subject, and the host refuses a blank title (it trims, so does this).
+    if (!nonEmpty(fields.get("subject"))) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run has a blank subject, so the filing of its body is not possible. Give it a subject.`,
+      );
+    }
     const draft = {};
     for (const field of TEXT_FIELDS) {
       if (typeof fields.get(field) === "string") draft[field] = fields.get(field);
     }
     const followUpDay = fields.get("followUpDay");
     if (typeof followUpDay === "number" && Number.isFinite(followUpDay)) draft.followUpDay = followUpDay;
+    draftedEmails.push(draft);
+    draftFields.push(fields);
+  }
 
+  // Bind each draft to exactly one approved recipient, by its contact. Every check after this one names a recipient by
+  // the approved record only.
+  const listRef = trimmedOrNone(input?.confirmedRecipientsRef);
+  if (listRef === undefined) {
+    throw new ExtensionToolCallRefusal(
+      "The run names no approved recipient list, so the drafts cannot be matched to the approved recipients.",
+    );
+  }
+  const approved = approvedRecipients(await ports.objects.read({ objectId: listRef }));
+  const draftByContact = new Map();
+  const recipients = [];
+  const approvedOf = [];
+  for (const [index, draft] of draftedEmails.entries()) {
+    const position = index + 1;
+    const { contact, conflict } = draftContact(draftFields[index]);
+    if (conflict) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run names two different contacts, so it cannot be matched to one approved recipient.`,
+      );
+    }
+    if (contact === undefined) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run names no recipient: it has no contact (contactId or recipientId) to match the approved recipient list.`,
+      );
+    }
+    const recipient = approved.get(contact);
+    if (recipient === undefined) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run is for a contact that is not on the approved recipient list.`,
+      );
+    }
+    if (draftByContact.has(contact)) {
+      throw new ExtensionToolCallRefusal(
+        `Drafts ${draftByContact.get(contact)} and ${position} of this run are both for ${approvedLabel(recipient)}: write one draft per approved recipient.`,
+      );
+    }
+    draftByContact.set(contact, position);
+    if (draft.recipientEmail !== undefined && !sameEmail(draft.recipientEmail, recipient.email)) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run, for ${approvedLabel(recipient)}, has a recipient email that is not the approved recipient's.`,
+      );
+    }
+    if (draft.recipientName !== undefined && oneLine(draft.recipientName) !== oneLine(recipient.name)) {
+      throw new ExtensionToolCallRefusal(
+        `Draft ${position} of this run, for ${approvedLabel(recipient)}, has a recipient name that is not the approved recipient's.`,
+      );
+    }
+    for (const [field, value] of [
+      ["recipientName", recipient.name],
+      ["recipientEmail", recipient.email],
+      ["recipientCompany", recipient.company],
+    ]) {
+      if (value !== "" || draft[field] !== undefined) draft[field] = value;
+    }
+    // The screen keys a draft by its recipientId and the send reads its contact: the draft is handed on under the approved
+    // contact exactly as the list writes it, whatever the draft wrote (padded, or only a contactId).
+    draft.recipientId = recipient.contact;
+    approvedOf.push(recipient);
+    recipients.push({ name: recipient.name, email: recipient.email, company: recipient.company });
+  }
+  for (const recipient of approved.values()) {
+    if (!draftByContact.has(recipient.contact)) {
+      throw new ExtensionToolCallRefusal(
+        `The approved recipient ${approvedLabel(recipient)} has no draft in this run: write one draft per approved recipient.`,
+      );
+    }
+  }
+
+  // The checks of what the review and the filing do with the bound drafts.
+  const byKey = new Map();
+  const byEmail = new Map();
+  const byBody = new Map();
+  for (const [index, draft] of draftedEmails.entries()) {
+    const position = index + 1;
     // The key the screen shows this draft under: the first of its key fields that the draft holds.
     const key = draft[KEY_FIELDS.find((field) => draft[field] !== undefined)];
     if (key === "__proto__") {
@@ -182,8 +356,17 @@ export async function extensionTool({ input, ports }) {
       }
       byEmail.set(draft.recipientEmail, position);
     }
-    draftedEmails.push(draft);
+    // The host refuses two bodies with the same bytes: they would be one artifact.
+    const bodyKey = bytesKey(draft.body);
+    if (byBody.has(bodyKey)) {
+      const earlier = byBody.get(bodyKey);
+      throw new ExtensionToolCallRefusal(
+        `Drafts ${earlier.position} and ${position} of this run have the same body, so the filing would make them one email body: ${earlier.label} and ${approvedLabel(approvedOf[index])}. Change the body of one of them.`,
+      );
+    }
+    byBody.set(bodyKey, { position, label: approvedLabel(approvedOf[index]) });
   }
 
-  return { ok: true, draftBundle: { draftedEmails } };
+  // The recipients the flow hands on are the approved recipients, one per draft and in draft order.
+  return { ok: true, draftBundle: { draftedEmails }, recipients };
 }

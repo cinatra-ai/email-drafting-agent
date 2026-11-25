@@ -27,11 +27,11 @@ test("(8) the campaign id is not listed as required", () => {
 // W8 (cinatra#3096) items 10 and 19, and the runtime loader's two mount rules.
 //
 // (10) The drafting review is the one pause this agent has, and it is declared:
-// one input step carrying the approval flag, the flow naming its renderer, and
+// one input step carrying the approval flag and the host review marker, and
 // the manifest claiming the gate.
 //
 // (19) A run that ends closes with a plain sentence - how many drafts were
-// reviewed and saved, or that no email was drafted - never with the raw values
+// filed and reviewed, or that no email was drafted - never with the raw values
 // the run hands on.
 //
 // The last two arms re-state the runtime loader's two mount rules over this
@@ -57,7 +57,9 @@ const outsideComment = (message) => String(message ?? "").replace(/\{#[\s\S]*?#\
 test("(10) the drafting review is declared and exists", () => {
   const pauses = nodesOfType("InputMessageNode");
   assert.deepEqual(pauses.map((n) => n.id), ["approval_gate"]);
-  assert.deepEqual(oas.metadata.cinatra.hitlScreens, [refs.approval_gate.metadata.cinatra.renderer]);
+  // The host draws the review (cinatra-ai/cinatra#3089): the flow names no screen of its own.
+  assert.equal(oas.metadata.cinatra.hitlScreens, undefined);
+  assert.equal(refs.approval_gate.metadata?.cinatra?.artifactReview?.targetsInput, "reviewTargets");
   assert.equal(refs.approval_gate.metadata?.cinatra?.requiresApproval, true, "the drafting review is not declared as a pause");
   assert.equal(pkg.cinatra.hasApprovalGates, true, "the manifest denies the pause its flow has");
 });
@@ -67,12 +69,12 @@ test("(19) the run ends in plain language, never in the envelope", () => {
   assert.ok(summary, "the run has no closing statement");
   assert.equal(summary.component_type, "OutputMessageNode");
   assert.ok(oas.nodes.some((n) => n.$component_ref === "drafting_summary"), "the closing statement is not a step of the flow");
-  assert.ok(hasEdge("apply", "drafting_summary"), "the run's last step does not pass the closing statement");
+  assert.ok(hasEdge("approval_gate", "drafting_summary"), "the run's last step does not pass the closing statement");
   assert.ok(hasEdge("drafting_summary", "end"), "the closing statement does not lead to the end");
-  assert.ok(!hasEdge("apply", "end"), "the run still jumps straight to its end");
+  assert.ok(!hasEdge("approval_gate", "end"), "the run still jumps straight to its end");
   assert.deepEqual(
     refs.end.outputs.map((o) => o.title),
-    ["draftBundle", "draftBundleTitle", "draftBundleDocument", "userResponse", "draftBundleRef"],
+    ["draftBundle", "draftBundleTitle", "userResponse", "draftBundleRef", "recipients", "approvedBodyArtifacts", "callToAction"],
     "the end node no longer carries the values the run hands on",
   );
 });
@@ -83,18 +85,18 @@ test("(19) an empty drafting run ends in plain language", () => {
   const message = String(summary.message ?? "");
   assert.equal(
     message,
-    "{# pyagentspec-input-hint (do not remove): {{ reviewedBundle }} #}" +
-      "{% if not reviewedBundle or not reviewedBundle.drafts %}No emails were drafted in this run: " +
+    "{# pyagentspec-input-hint (do not remove): {{ draftBundle }} #}" +
+      "{% if not draftBundle or not draftBundle.draftedEmails %}No emails were drafted in this run: " +
       "there were no recipients to write to, or no draft could be written for them." +
-      "{% else %}{{ reviewedBundle.drafts | length }} email drafts were reviewed and saved.{% endif %}",
-    "each outcome does not reach its own sentence: nothing drafted, drafts saved",
+      "{% else %}{{ draftBundle.draftedEmails | length }} email drafts were filed and reviewed.{% endif %}",
+    "each outcome does not reach its own sentence: nothing drafted, drafts filed and reviewed",
   );
   assert.match(message, /no emails were drafted/i, "an empty drafting run has no plain-language ending");
-  assert.match(message, /reviewed and saved/i, "a run with drafts has no plain-language ending");
-  assert.match(outsideComment(message), /\breviewedBundle\b/, "the sentence never reads the reviewed bundle");
+  assert.match(message, /filed and reviewed/i, "a run with drafts has no plain-language ending");
+  assert.match(outsideComment(message), /\bdraftBundle\b/, "the sentence never reads the saved drafts");
   assert.equal(summary.metadata?.cinatra?.purpose, "plain-language-drafting-ending");
-  assert.deepEqual(summary.inputs, [{ title: "reviewedBundle", type: "object", default: {} }]);
-  assert.equal(countDataEdges("apply.reviewedBundle", "drafting_summary.reviewedBundle"), 1);
+  assert.deepEqual(summary.inputs, [{ title: "draftBundle", type: "object", default: {} }]);
+  assert.equal(countDataEdges("read_drafts.draftBundle", "drafting_summary.draftBundle"), 1);
 });
 
 /** The inputs a node CONSUMES: an EndNode names them under `outputs`, every

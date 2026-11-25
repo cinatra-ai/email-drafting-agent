@@ -80,12 +80,14 @@ test("6a — the produced extension is a required artifact dependency", () => {
   assert.equal(edge.versionConstraint.kind, "semver-range");
 });
 
-test("6a — a terminal binding resolves the declaration", () => {
-  const bound = bindings.filter((b) => b.binding.extension === EMAIL);
-  assert.equal(bound.length, 1);
-  assert.equal(bound[0].output, "draftBundleDocument");
-  assert.ok(bound[0].binding.titleFrom);
-  assert.ok(bound[0].binding.contentFrom);
+// cinatra-ai/cinatra#3089: the bodies are filed mid-run, one per draft, by the
+// host's list filing; no end binding files one combined document any more.
+test("6a — the list filing step resolves the declaration, and no end binding does", () => {
+  assert.deepEqual(bindings.filter((b) => b.binding.extension === EMAIL), []);
+  const input = components.file_drafts?.data?.input ?? {};
+  assert.equal(components.file_drafts?.data?.tool, "artifact_materialize");
+  assert.equal(input.extension, EMAIL);
+  assert.equal(input.objectTypeId, BODY);
 });
 
 test("6d — the campaign is hidden plumbing, no longer listed as required", () => {

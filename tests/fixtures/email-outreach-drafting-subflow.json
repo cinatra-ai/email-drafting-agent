@@ -84,6 +84,47 @@
       "json_schema": {
         "format": "uuid"
       }
+    },
+    {
+      "title": "recipients",
+      "type": "array",
+      "json_schema": {
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "company": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "approvedBodyArtifacts",
+      "type": "array",
+      "json_schema": {
+        "items": {
+          "type": "object",
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "representationRevisionId": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "callToAction",
+      "type": "string"
     }
   ],
   "start_node": {
@@ -110,6 +151,9 @@
     },
     {
       "$component_ref": "drafts-read_drafts"
+    },
+    {
+      "$component_ref": "drafts-file_drafts"
     },
     {
       "$component_ref": "drafts-approval_gate"
@@ -193,9 +237,19 @@
     },
     {
       "component_type": "ControlFlowEdge",
-      "name": "drafts-read_drafts_to_approval_gate",
+      "name": "drafts-read_drafts_to_file_drafts",
       "from_node": {
         "$component_ref": "drafts-read_drafts"
+      },
+      "to_node": {
+        "$component_ref": "drafts-file_drafts"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "drafts-file_drafts_to_approval_gate",
+      "from_node": {
+        "$component_ref": "drafts-file_drafts"
       },
       "to_node": {
         "$component_ref": "drafts-approval_gate"
@@ -335,30 +389,6 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-draft_to_approval_gate_draftBodyArtifacts",
-      "source_node": {
-        "$component_ref": "drafts-draft"
-      },
-      "source_output": "draftBodyArtifacts",
-      "destination_node": {
-        "$component_ref": "drafts-approval_gate"
-      },
-      "destination_input": "draftBodyArtifacts"
-    },
-    {
-      "component_type": "DataFlowEdge",
-      "name": "drafts-draft_to_approval_gate_draftBundleRef",
-      "source_node": {
-        "$component_ref": "drafts-draft"
-      },
-      "source_output": "draftBundleRef",
-      "destination_node": {
-        "$component_ref": "drafts-approval_gate"
-      },
-      "destination_input": "draftBundleRef"
-    },
-    {
-      "component_type": "DataFlowEdge",
       "name": "drafts-start_to_read_drafts_agent_run_id",
       "source_node": {
         "$component_ref": "drafts-start"
@@ -383,15 +413,15 @@
     },
     {
       "component_type": "DataFlowEdge",
-      "name": "drafts-read_drafts_to_approval_gate_draftBundle",
+      "name": "drafts-start_to_read_drafts_confirmedRecipientsRef",
       "source_node": {
+        "$component_ref": "drafts-start"
+      },
+      "source_output": "confirmedRecipientsRef",
+      "destination_node": {
         "$component_ref": "drafts-read_drafts"
       },
-      "source_output": "draftBundle",
-      "destination_node": {
-        "$component_ref": "drafts-approval_gate"
-      },
-      "destination_input": "draftBundle"
+      "destination_input": "confirmedRecipientsRef"
     },
     {
       "component_type": "DataFlowEdge",
@@ -404,6 +434,78 @@
         "$component_ref": "drafts-end"
       },
       "destination_input": "userResponse"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-read_drafts_to_file_drafts_draftBundle",
+      "source_node": {
+        "$component_ref": "drafts-read_drafts"
+      },
+      "source_output": "draftBundle",
+      "destination_node": {
+        "$component_ref": "drafts-file_drafts"
+      },
+      "destination_input": "draftBundle"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-start_to_file_drafts_agent_run_id",
+      "source_node": {
+        "$component_ref": "drafts-start"
+      },
+      "source_output": "agent_run_id",
+      "destination_node": {
+        "$component_ref": "drafts-file_drafts"
+      },
+      "destination_input": "agent_run_id"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-file_drafts_to_approval_gate_reviewTargets",
+      "source_node": {
+        "$component_ref": "drafts-file_drafts"
+      },
+      "source_output": "reviewTargets",
+      "destination_node": {
+        "$component_ref": "drafts-approval_gate"
+      },
+      "destination_input": "reviewTargets"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-read_drafts_to_end_recipients",
+      "source_node": {
+        "$component_ref": "drafts-read_drafts"
+      },
+      "source_output": "recipients",
+      "destination_node": {
+        "$component_ref": "drafts-end"
+      },
+      "destination_input": "recipients"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-file_drafts_to_end_approvedBodyArtifacts",
+      "source_node": {
+        "$component_ref": "drafts-file_drafts"
+      },
+      "source_output": "artifacts",
+      "destination_node": {
+        "$component_ref": "drafts-end"
+      },
+      "destination_input": "approvedBodyArtifacts"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-start_to_end_callToAction",
+      "source_node": {
+        "$component_ref": "drafts-start"
+      },
+      "source_output": "callToAction",
+      "destination_node": {
+        "$component_ref": "drafts-end"
+      },
+      "destination_input": "callToAction"
     }
   ],
   "$referenced_components": {
@@ -504,7 +606,7 @@
       "url": "{{CINATRA_BASE_URL}}/api/llm-bridge",
       "http_method": "POST",
       "data": {
-        "system": "You are an email drafting agent.\n\nStep 1: Call objects_get with confirmedRecipientsRef to fetch the recipients list.\n\nStep 1b: For each entry of contextSlotBindings, call artifact_representation_get({ artifactId, representationRevisionId }) to read the pinned context the operator selected. Read the context ONLY through that road \u2014 never reach for the parent run's slot or project. Skip an entry the road refuses.\n\nStep 2: Generate exactly one personalized initial outreach email per recipient using offeringCompanyWebsite, callToAction, and senderName as context.\n\nStep 3 \u2014 CRITICAL: Call objects_save BEFORE returning any JSON. Use exactly this structure:\n  objects_save({\n    typeHint: \"@cinatra-ai/campaigns:email-draft-bundle\",\n    rawData: {\n      cinatra_agent_run_id: \"<agent_run_id input>\",\n      drafts: [\n        { recipientEmail: \"...\", subject: \"...\", body: \"...\", status: \"draft\" }\n      ]\n    }\n  })\n\nStep 4: Return ONLY this JSON using the object ID returned by objects_save: {\"draftBundleRef\":\"<objectId returned by objects_save>\",\"draftBodyArtifacts\":[{\"artifactId\":\"<id>\",\"representationRevisionId\":\"<revision>\"}],\"summary\":\"<one sentence summary>\"}. draftBodyArtifacts lists one @cinatra-ai/email:body artifact per draft, in recipient order, so the review screen can display the bodies themselves.\n\nDo NOT return draftBundleRef without completing Step 3. Never skip objects_save. Do not send emails \u2014 this agent only drafts.",
+        "system": "You are an email drafting agent.\n\nStep 1: Call objects_get with confirmedRecipientsRef to fetch the recipients list.\n\nStep 1b: For each entry of contextSlotBindings, call artifact_representation_get({ artifactId, representationRevisionId }) to read the pinned context the operator selected. Read the context ONLY through that road \u2014 never reach for the parent run's slot or project. Skip an entry the road refuses.\n\nStep 2: Generate exactly one personalized initial outreach email per recipient using offeringCompanyWebsite, callToAction, and senderName as context.\n\nStep 3 \u2014 CRITICAL: Call objects_save BEFORE returning any JSON. Use exactly this structure:\n  objects_save({\n    typeHint: \"@cinatra-ai/campaigns:email-draft-bundle\",\n    rawData: {\n      cinatra_agent_run_id: \"<agent_run_id input>\",\n      drafts: [\n        { recipientId: \"<contactId>\", recipientName: \"...\", recipientEmail: \"...\", recipientCompany: \"...\", subject: \"...\", body: \"...\", status: \"draft\" }\n      ]\n    }\n  })\nEach draft names its recipient: recipientId is the confirmed recipient's contactId, and recipientName is its name. recipientCompany is the confirmed recipient's company name, or \"\" when the list names none. A recipient without an email address still gets its draft: write recipientEmail: \"\" and keep its recipientId and recipientName.\n\nStep 4: Return ONLY this JSON using the object ID returned by objects_save: {\"draftBundleRef\":\"<objectId returned by objects_save>\",\"summary\":\"<one sentence summary>\"}. Each draft has a non-empty subject, and no two drafts have the same body: each body is filed as its own email body for the review.\n\nDo NOT return draftBundleRef without completing Step 3. Never skip objects_save. Do not send emails \u2014 this agent only drafts.",
         "user": "Execute the email drafting task now and return the result as JSON.\nInputs:\n- offeringCompanyWebsite: {{ offeringCompanyWebsite }}\n- callToAction: {{ callToAction }}\n- senderName: {{ senderName }}\n- confirmedRecipientsRef: {{ confirmedRecipientsRef }}\n- contextSlotBindings: {{ contextSlotBindings }}",
         "agent_id": "email-drafting",
         "agent_run_id": "{{ agent_run_id }}"
@@ -516,31 +618,13 @@
           "json_schema": {
             "format": "uuid"
           }
-        },
-        {
-          "title": "draftBodyArtifacts",
-          "type": "array",
-          "json_schema": {
-            "items": {
-              "type": "object",
-              "properties": {
-                "artifactId": {
-                  "type": "string"
-                },
-                "representationRevisionId": {
-                  "type": "string"
-                }
-              }
-            }
-          }
         }
       ],
       "metadata": {
         "cinatra": {
           "riskClass": "draft_create",
           "requiresApproval": true,
-          "renderer": "@cinatra-ai/email-drafting-agent:output",
-          "a2uiSurfaceId": "email-drafting:step-1:output"
+          "publishes": false
         }
       },
       "inputs": [
@@ -592,7 +676,8 @@
         "input": {
           "name": "saved_drafts",
           "input": {
-            "draftBundleRef": "{{ draftBundleRef }}"
+            "draftBundleRef": "{{ draftBundleRef }}",
+            "confirmedRecipientsRef": "{{ confirmedRecipientsRef }}"
           }
         },
         "agent_run_id": "{{ agent_run_id }}"
@@ -607,6 +692,11 @@
           "title": "draftBundleRef",
           "type": "string",
           "default": ""
+        },
+        {
+          "title": "confirmedRecipientsRef",
+          "type": "string",
+          "default": ""
         }
       ],
       "outputs": [
@@ -619,13 +709,34 @@
           "title": "ok",
           "type": "boolean",
           "default": false
+        },
+        {
+          "title": "recipients",
+          "type": "array",
+          "default": [],
+          "json_schema": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "company": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       ],
       "metadata": {
         "cinatra": {
           "riskClass": "read_only",
           "requiresApproval": false,
-          "description": "The agent reads the drafts this run saved and hands them to the drafts review, so the review shows the drafts that the approval and the send act on. A saved bundle that is missing, holds no drafts or has a draft without a recipient ends the run with its reason before the review."
+          "description": "The agent reads the drafts this run saved, so the bodies filed for the review and handed on are the drafts the send acts on. It binds each draft to exactly one recipient of the run's approved recipient list and hands on each draft's recipient (name, email, company) as the approved list names it, in draft order. A saved bundle that is missing or holds no drafts, a draft for a contact that is not approved or with an address or name that is not the approved one, two drafts for one recipient, and an approved recipient without a draft end the run with the reason before anything is filed."
         }
       }
     },
@@ -646,8 +757,117 @@
             "format": "uuid"
           },
           "default": ""
+        },
+        {
+          "title": "recipients",
+          "type": "array",
+          "default": [],
+          "json_schema": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "company": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "approvedBodyArtifacts",
+          "type": "array",
+          "default": [],
+          "json_schema": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "representationRevisionId": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "callToAction",
+          "type": "string",
+          "default": ""
         }
       ]
+    },
+    "drafts-file_drafts": {
+      "component_type": "ApiNode",
+      "id": "drafts-file_drafts",
+      "name": "File each drafted body for the review",
+      "url": "{{CINATRA_BASE_URL}}/api/agents/passthrough",
+      "http_method": "POST",
+      "data": {
+        "tool": "artifact_materialize",
+        "input": {
+          "extension": "@cinatra-ai/email-artifacts",
+          "objectTypeId": "@cinatra-ai/email:body",
+          "declaredMime": "text/markdown",
+          "content": "{# pyagentspec-input-hint (do not remove): {{ draftBundle }} #}{{ draftBundle.draftedEmails | tojson }}",
+          "memberContentField": "body",
+          "memberTitleField": "subject",
+          "node_id": "drafts-file_drafts"
+        },
+        "agent_run_id": "{{ agent_run_id }}"
+      },
+      "inputs": [
+        {
+          "title": "draftBundle",
+          "type": "object",
+          "default": {}
+        },
+        {
+          "title": "agent_run_id",
+          "type": "string",
+          "default": ""
+        }
+      ],
+      "outputs": [
+        {
+          "title": "artifacts",
+          "type": "array",
+          "default": [],
+          "json_schema": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "artifactId": {
+                  "type": "string"
+                },
+                "representationRevisionId": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "reviewTargets",
+          "type": "string",
+          "default": "[]"
+        }
+      ],
+      "metadata": {
+        "cinatra": {
+          "riskClass": "write",
+          "requiresApproval": false,
+          "publishes": false,
+          "description": "The host files each saved draft's body as its own email body, in draft order, titled by its subject: the filed bytes are the saved body, so the send reuses each one. The reference pairs it answers are the review's target set and the bodies this flow hands on."
+        }
+      }
     },
     "drafts-approval_gate": {
       "component_type": "InputMessageNode",
@@ -655,56 +875,27 @@
       "name": "Review drafts",
       "metadata": {
         "cinatra": {
-          "riskClass": "approval",
+          "riskClass": "read_only",
           "requiresApproval": true,
-          "renderer": "@cinatra-ai/email-drafting-agent:email-drafts-review",
+          "surfaceGateInputs": true,
           "a2uiSurfaceId": "email-drafting:review:input",
           "autoSkipWhenInputsPresent": false,
-          "description": "Read the drafted emails, then approve, send them back for revision, or reject the run.",
           "inputMessageSchema": {
             "type": "object",
-            "x-renderer": "@cinatra-ai/email-drafting-agent:email-drafts-review",
             "properties": {
-              "draftBodyArtifacts": {
-                "type": "array",
-                "title": "Drafted emails",
-                "x-artifact-kind": "@cinatra-ai/email:body",
-                "x-artifact-read": "artifact_representation_get",
-                "items": {
-                  "type": "object"
-                },
-                "readOnly": true
-              },
-              "draftBundleRef": {
+              "userResponse": {
                 "type": "string",
-                "title": "Draft bundle",
-                "readOnly": true
-              },
-              "draftBundle": {
-                "type": "object",
-                "title": "Drafts",
-                "readOnly": true
-              },
-              "decision": {
-                "type": "string",
-                "title": "Decision",
-                "enum": [
-                  "approve",
-                  "revise",
-                  "reject"
-                ],
-                "description": "Approve the step, send it back for revision, or reject the run."
-              },
-              "note": {
-                "type": "string",
-                "title": "Note"
+                "title": "Drafts review note"
               }
             },
             "required": [
-              "decision"
+              "userResponse"
             ]
           },
-          "surfaceGateInputs": true
+          "description": "The review of the drafted bodies. The marker below names the input that carries the bodies this run filed, so the host pins exactly those revisions and opens one review per body, in draft order, while the run waits here. The decision is the host's review: this flow owns the pause and draws no screen of its own.",
+          "artifactReview": {
+            "targetsInput": "reviewTargets"
+          }
         }
       },
       "outputs": [
@@ -715,23 +906,9 @@
       ],
       "inputs": [
         {
-          "title": "draftBodyArtifacts",
-          "type": "array",
-          "json_schema": {
-            "items": {
-              "type": "object"
-            }
-          }
-        },
-        {
-          "title": "draftBundleRef",
+          "title": "reviewTargets",
           "type": "string",
-          "default": ""
-        },
-        {
-          "title": "draftBundle",
-          "type": "object",
-          "default": {}
+          "default": "[]"
         }
       ]
     },
@@ -739,7 +916,11 @@
       "component_type": "PluginRegexNode",
       "id": "drafts-uuid_match",
       "name": "drafts-uuid_match",
-      "metadata": {},
+      "metadata": {
+        "cinatra": {
+          "publishes": false
+        }
+      },
       "inputs": [
         {
           "title": "text",
@@ -769,7 +950,11 @@
       "component_type": "PluginTemplateNode",
       "id": "drafts-check_inputs_predicate",
       "name": "drafts-check_inputs_predicate",
-      "metadata": {},
+      "metadata": {
+        "cinatra": {
+          "publishes": false
+        }
+      },
       "inputs": [
         {
           "title": "matches"
