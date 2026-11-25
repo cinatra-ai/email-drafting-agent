@@ -307,6 +307,61 @@ test("a member never carries a field the host stamps: campaignId, runId", async 
   }
 });
 
+// Every value the pack hands to the host's typed member data is checked against the host's bound before
+// anything is filed: non-blank after trim, at most 512 characters after trim (the host stores typed values
+// trimmed and measures them in that order), no line break. A value over the bound would make the host refuse
+// the whole filing, so no review would appear.
+const idOf = (length) => "c".repeat(length);
+const refusedWith = (pattern, secret) => (error) => {
+  assert.match(error.message, pattern);
+  assert.ok(!error.message.includes(secret), "the refusal never names the value");
+  return true;
+};
+const oneApproved = (contactId) => [{ contactId, name: "Ada", email: "ada@example.com" }];
+const oneDraft = (recipientId) => [{ recipientId, subject: "One", body: "Hi Ada" }];
+
+test("a contact id of 512 characters is accepted and one of 513 is refused by position, never by value", async () => {
+  const ok = await readWith(oneDraft(idOf(512)), oneApproved(idOf(512)));
+  assert.equal(ok.draftBundle.draftedEmails[0].contactId, idOf(512));
+  const bad = [...oneApproved("c-1"), ...oneApproved(idOf(513))];
+  await assert.rejects(
+    readWith([...oneDraft("c-1"), { recipientId: idOf(513), subject: "Two", body: "Hi again" }], bad),
+    refusedWith(/^Approved recipient 2 of this run has a contact id that cannot be stored on its email body/, idOf(20)),
+  );
+});
+
+test("a padded contact id is trimmed, then measured", async () => {
+  const padded = `  ${idOf(512)}\t`;
+  const ok = await readWith(oneDraft(padded), oneApproved(padded));
+  assert.equal(ok.draftBundle.draftedEmails[0].contactId, idOf(512));
+  const tooLong = `  ${idOf(513)} `;
+  await assert.rejects(
+    readWith(oneDraft(tooLong), oneApproved(tooLong)),
+    refusedWith(/^Approved recipient 1 of this run has a contact id that cannot be stored/, idOf(20)),
+  );
+});
+
+test("a contact id with a line break is refused by position", async () => {
+  for (const contactId of ["c-1\nx", "c-1\rx", "c-1\r\nx", "c-1 x"]) {
+    await assert.rejects(
+      readWith(oneDraft("c-1"), oneApproved(contactId)),
+      refusedWith(/^Approved recipient 1 of this run has a contact id that cannot be stored/, "c-1"),
+    );
+  }
+});
+
+test("the campaign check refuses a campaign over 512 characters or over several lines, after trimming", () => {
+  const template = refs.check_inputs_predicate.template;
+  assert.match(template, /campaignId/);
+  assert.match(template, /\|\s*trim/);
+  assert.match(template, /length\s*>\s*512/);
+  assert.match(template, /splitlines\(\)\s*\|\s*length\s*>\s*1/);
+  // The recipient list is asked first; both campaign faults end the run on the same branch and sentence.
+  assert.ok(template.indexOf("missing") < template.indexOf("no_campaign"));
+  assert.match(refs.campaign_missing.message, /512/);
+  assert.match(refs.campaign_missing.message, /one line/);
+});
+
 test("a draft whose contactId and recipientId differ still ends the run", async () => {
   await assert.rejects(
     readWith([{ recipientId: "c-1", contactId: "c-2", subject: "One", body: "Hi" }], approvedRows),

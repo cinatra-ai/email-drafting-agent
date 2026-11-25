@@ -93,6 +93,10 @@ const SHOWN_LISTS = ["draftedEmails", "drafts"];
 // The most bodies the filing step takes in one call (MAX_MATERIALIZE_LIST_MEMBERS of the platform's
 // artifact-materialize-shaper.ts). It is below the write-back's own bound of 2000 drafts per answer.
 const MAX_FILED_DRAFTS = 50;
+// The longest typed value the filing stores on a body (MATERIALIZE_LIST_DATA_MAX_VALUE_CHARS of the platform's
+// artifact-binding.ts), measured after trimming, and the line breaks a one-line value cannot hold.
+const MAX_TYPED_VALUE_CHARS = 512;
+const LINE_BREAK = /[\r\n\u2028\u2029\u0085\v\f]/;
 
 class ExtensionToolCallRefusal extends Error {
   constructor(message) {
@@ -166,6 +170,14 @@ const approvedRecipients = (list) => {
     if (contact === undefined) {
       throw new ExtensionToolCallRefusal(
         `Approved recipient ${index + 1} of this run names no contact, so no draft can be bound to it.`,
+      );
+    }
+    // The filing stores the contact on the body as a typed value: the host takes a non-blank string of at most
+    // MAX_TYPED_VALUE_CHARS after trimming, and one that is over it refuses the whole filing. A line break is no
+    // value of one line. The contact is already trimmed here; the refusal names the position, never the value.
+    if (contact.length > MAX_TYPED_VALUE_CHARS || LINE_BREAK.test(contact)) {
+      throw new ExtensionToolCallRefusal(
+        `Approved recipient ${index + 1} of this run has a contact id that cannot be stored on its email body (at most ${MAX_TYPED_VALUE_CHARS} characters, on one line), so no draft can be bound to it.`,
       );
     }
     if (byContact.has(contact)) continue;

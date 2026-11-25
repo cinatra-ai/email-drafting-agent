@@ -1161,7 +1161,7 @@
       ],
       "input_mapping": {},
       "output_mapping": {},
-      "template": "{% if not (matches and (matches|length > 0)) %}missing{% elif not ((campaignId or '')|trim) %}no_campaign{% else %}present{% endif %}",
+      "template": "{% set campaign = (campaignId or '')|trim %}{% if not (matches and (matches|length > 0)) %}missing{% elif not campaign or campaign|length > 512 or campaign.splitlines()|length > 1 %}no_campaign{% else %}present{% endif %}",
       "component_plugin_name": "NodesPlugin",
       "component_plugin_version": "26.1.0"
     },
@@ -1208,7 +1208,7 @@
       "id": "campaign_missing",
       "name": "No campaign to draft for",
       "inputs": [],
-      "message": "This run stopped before drafting: it was started without a campaign, and every email body is filed and reviewed for one campaign, so nothing was drafted. Start the drafting from its campaign.",
+      "message": "This run stopped before drafting: it has no usable campaign (none was given, or its id is longer than 512 characters or not on one line), and every email body is filed and reviewed for one campaign, so nothing was drafted. Start the drafting from its campaign.",
       "metadata": {
         "cinatra": {
           "purpose": "plain-language-ending-for-a-run-without-a-campaign"
