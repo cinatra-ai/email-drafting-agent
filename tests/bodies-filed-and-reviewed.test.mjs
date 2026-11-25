@@ -330,6 +330,13 @@ test("a contact id of 512 characters is accepted and one of 513 is refused by po
   );
 });
 
+test("a contact id that is only U+FEFF is blank for the host's trim and names no contact", async () => {
+  await assert.rejects(
+    readWith(oneDraft("\ufeff"), oneApproved("\ufeff")),
+    (error) => /^Approved recipient 1 of this run names no contact/.test(error.message),
+  );
+});
+
 test("a padded contact id is trimmed, then measured", async () => {
   const padded = `  ${idOf(512)}\t`;
   const ok = await readWith(oneDraft(padded), oneApproved(padded));
@@ -341,8 +348,8 @@ test("a padded contact id is trimmed, then measured", async () => {
   );
 });
 
-test("a contact id with a line break is refused by position", async () => {
-  for (const contactId of ["c-1\nx", "c-1\rx", "c-1\r\nx", "c-1 x"]) {
+test("a contact id with a line break or an invisible character is refused by position", async () => {
+  for (const contactId of ["c-1\nx", "c-1\rx", "c-1\r\nx", "c-1\u2028x", "c-1\u200bx", "c-1\ufeffx", "\u200b", "c-1\u0000"]) {
     await assert.rejects(
       readWith(oneDraft("c-1"), oneApproved(contactId)),
       refusedWith(/^Approved recipient 1 of this run has a contact id that cannot be stored/, "c-1"),
@@ -350,16 +357,28 @@ test("a contact id with a line break is refused by position", async () => {
   }
 });
 
-test("the campaign check refuses a campaign over 512 characters or over several lines, after trimming", () => {
+// The campaign id is the id of the saved campaign (the start input is declared format uuid, and the outreach flow
+// supplies the id its campaign-setup step saved), so the check asks for the real form, not for two readings of
+// "blank": the host trims with JavaScript's rules and the flow's Jinja with Python's, and they differ (U+FEFF is
+// space to one and not to the other). The template trims only what both read as space (space, tab, CR, LF) and
+// answers `present` only for 8-4-4-4-12 hexadecimal digits; any invisible, blank-like or overlong value is `no_campaign`.
+// The pack's tests are JavaScript and have no Jinja renderer, so these assertions pin the rule's parts in the template;
+// the rendered decision table (valid, U+FEFF, U+200B, padded, 37 characters, empty ...) is proven with Jinja itself.
+test("the campaign check answers present only for a UUID, and trims only what the host trims the same way", () => {
   const template = refs.check_inputs_predicate.template;
   assert.match(template, /campaignId/);
-  assert.match(template, /\|\s*trim/);
-  assert.match(template, /length\s*>\s*512/);
-  assert.match(template, /splitlines\(\)\s*\|\s*length\s*>\s*1/);
-  // The recipient list is asked first; both campaign faults end the run on the same branch and sentence.
+  assert.ok(template.includes("|trim(' \\t\\r\\n')"), "trims space, tab, CR and LF only");
+  assert.ok(!template.includes("splitlines"), "no Python-only whitespace reading");
+  assert.ok(!/\|\s*trim\s*[%}|]/.test(template), "no bare trim");
+  assert.match(template, /length\s*==\s*36/);
+  for (const at of [8, 13, 18, 23]) assert.ok(template.includes(`[${at}] == '-'`), `a hyphen is required at ${at}`);
+  assert.match(template, /split\('-'\)\s*\|\s*length\s*==\s*5/);
+  assert.ok(template.includes("0123456789abcdefABCDEF-"), "every other character is a hexadecimal digit");
+  // The recipient list is asked first; every campaign fault ends the run on the same branch and sentence.
   assert.ok(template.indexOf("missing") < template.indexOf("no_campaign"));
-  assert.match(refs.campaign_missing.message, /512/);
-  assert.match(refs.campaign_missing.message, /one line/);
+  assert.ok(template.includes("{% else %}no_campaign{% endif %}"), "anything but the UUID form is no_campaign");
+  assert.match(refs.campaign_missing.message, /campaign id/);
+  assert.match(refs.campaign_missing.message, /before drafting/);
 });
 
 test("a draft whose contactId and recipientId differ still ends the run", async () => {

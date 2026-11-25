@@ -94,9 +94,11 @@ const SHOWN_LISTS = ["draftedEmails", "drafts"];
 // artifact-materialize-shaper.ts). It is below the write-back's own bound of 2000 drafts per answer.
 const MAX_FILED_DRAFTS = 50;
 // The longest typed value the filing stores on a body (MATERIALIZE_LIST_DATA_MAX_VALUE_CHARS of the platform's
-// artifact-binding.ts), measured after trimming, and the line breaks a one-line value cannot hold.
+// artifact-binding.ts), measured after trimming with String.prototype.trim as the platform does (it strips U+FEFF
+// too, so a contact of only that is blank, as it is there). An invisible value cannot be told apart by a person:
+// a control or format character (line breaks, U+200B, U+FEFF inside a value) or a line or paragraph separator.
 const MAX_TYPED_VALUE_CHARS = 512;
-const LINE_BREAK = /[\r\n\u2028\u2029\u0085\v\f]/;
+const INVISIBLE = /[\p{C}\p{Zl}\p{Zp}]/u;
 
 class ExtensionToolCallRefusal extends Error {
   constructor(message) {
@@ -173,11 +175,11 @@ const approvedRecipients = (list) => {
       );
     }
     // The filing stores the contact on the body as a typed value: the host takes a non-blank string of at most
-    // MAX_TYPED_VALUE_CHARS after trimming, and one that is over it refuses the whole filing. A line break is no
-    // value of one line. The contact is already trimmed here; the refusal names the position, never the value.
-    if (contact.length > MAX_TYPED_VALUE_CHARS || LINE_BREAK.test(contact)) {
+    // MAX_TYPED_VALUE_CHARS after trimming, and one that is over it refuses the whole filing. An invisible character or a
+    // line break is no value a person can read. The contact is already trimmed here; the refusal names the position only.
+    if (contact.length > MAX_TYPED_VALUE_CHARS || INVISIBLE.test(contact)) {
       throw new ExtensionToolCallRefusal(
-        `Approved recipient ${index + 1} of this run has a contact id that cannot be stored on its email body (at most ${MAX_TYPED_VALUE_CHARS} characters, on one line), so no draft can be bound to it.`,
+        `Approved recipient ${index + 1} of this run has a contact id that cannot be stored on its email body (at most ${MAX_TYPED_VALUE_CHARS} characters, with no line break or invisible character), so no draft can be bound to it.`,
       );
     }
     if (byContact.has(contact)) continue;
