@@ -259,7 +259,7 @@ test("D12 a draft that names its recipient only by its own id is for no approved
   const row = { id: "d-9", subject: "Idea five", body: "Hello" };
   await assert.rejects(
     readOf({ drafts: [row] }, listOf([{ contactId: "d-9", name: "Dee", email: "" }])),
-    refused(/^Draft 1 of this run names no approved recipient/),
+    refused(/^Draft 1 of this run names no recipient/),
   );
 });
 
@@ -270,10 +270,11 @@ test("D13 a draft that names its recipient only by recipientId is handed on", as
   assert.deepEqual(answer.draftBundle.draftedEmails, [row]);
 });
 
-test("D14 a draft whose id is no text, with no email and no recipientId, names no recipient", async () => {
+test("D14 a draft with no email and no contact names no recipient", async () => {
   const cases = [
-    { id: 7, subject: "Idea seven", body: "Hello" },
+    { id: "d-7", subject: "Idea seven", body: "Hello" },
     { id: "  ", recipientId: "", subject: "Idea seven", body: "Hello" },
+    { recipientId: " ", contactId: "", subject: "Idea seven", body: "Hello" },
     { recipientId: 12, subject: "Idea seven", body: "Hello" },
   ];
   for (const row of cases) {
@@ -363,11 +364,10 @@ test("D21 two drafts that the review would show under one id, or that name one r
   // The second draft of each pair has a body of its own, so that only its key or its email can refuse the pair.
   const other = { subject: "Idea nine", body: "Hello again" };
   const cases = [
-    [{ recipientEmail: "shared@example.com", ...text }, { recipientEmail: "shared@example.com", ...other, subject: "Second" }],
-    [{ id: "x@example.com", recipientEmail: "gil@example.com", ...text }, { recipientEmail: "x@example.com", ...other }],
-    [{ id: "d-1", ...text }, { recipientId: "d-1", ...other }],
-    [{ recipientEmail: "hal@example.com", ...text }, { id: "d-2", recipientEmail: "hal@example.com", ...other }],
-    [{ recipientId: "", recipientEmail: "ivy@example.com", ...text }, { recipientId: "", recipientEmail: "jon@example.com", ...other }],
+    [{ recipientId: "c-1", recipientEmail: "shared@example.com", ...text }, { recipientId: "c-2", recipientEmail: "shared@example.com", ...other, subject: "Second" }],
+    [{ id: "x@example.com", recipientId: "c-1", recipientEmail: "gil@example.com", ...text }, { recipientId: "x@example.com", recipientEmail: "ivy@example.com", ...other }],
+    [{ id: "d-1", recipientId: "c-1", ...text }, { id: "d-1", recipientId: "c-2", ...other }],
+    [{ recipientId: "c-1", recipientEmail: "hal@example.com", ...text }, { id: "d-2", recipientId: "c-2", recipientEmail: "hal@example.com", ...other }],
   ];
   for (const drafts of cases) {
     await assert.rejects(readOf({ drafts }), refused(/^Drafts 1 and 2 of this run /));
@@ -380,7 +380,7 @@ test("D21 two drafts that the review would show under one id, or that name one r
 
 test("D22 a draft that the review would show under the id __proto__ is refused", async () => {
   for (const row of [
-    { id: "__proto__", recipientEmail: "max@example.com", subject: "Idea ten", body: "Hello" },
+    { id: "__proto__", recipientId: "c-1", recipientEmail: "max@example.com", subject: "Idea ten", body: "Hello" },
     { recipientId: "__proto__", subject: "Idea ten", body: "Hello" },
   ]) {
     await assert.rejects(readOf({ drafts: [row] }), refused(/^Draft 1 of this run has the id __proto__/));
@@ -461,23 +461,24 @@ test("D32 a draft with a blank subject is refused with its position", async () =
 // of the two drafts, so the refusal names both.
 test("D33 two drafts with the same body are refused, naming both drafts and their recipients", async () => {
   const drafts = [
-    { id: "d-1", recipientName: "Ada", recipientEmail: "ada@example.com", subject: "One", body: "Same text" },
-    { id: "d-2", recipientEmail: "ben@example.com", subject: "Two", body: "Other text" },
-    { id: "d-3", recipientName: "Cy", recipientEmail: "cy@example.com", subject: "Three", body: "Same text" },
+    { id: "d-1", recipientId: "c-1", recipientName: "Ada", recipientEmail: "ada@example.com", subject: "One", body: "Same text" },
+    { id: "d-2", recipientId: "c-2", recipientEmail: "ben@example.com", subject: "Two", body: "Other text" },
+    { id: "d-3", recipientId: "c-3", recipientName: "Cy", recipientEmail: "cy@example.com", subject: "Three", body: "Same text" },
   ];
   await assert.rejects(
     readOf({ drafts }),
     (error) => {
       assertRefusal(error);
       assert.match(error.message, /^Drafts 1 and 3 of this run have the same body, so the filing would make them one email body: /);
-      assert.ok(error.message.includes("ada@example.com") && error.message.includes("cy@example.com"));
+      // Both recipients are named by their approved labels: the name, else the approved address.
+      assert.match(error.message, /: Ada and Cy\. Change the body of one of them\.$/);
       assert.ok(!error.message.includes("ben@example.com"));
       return true;
     },
   );
   // The empty body is a body: two of them are the same body.
   await assert.rejects(
-    readOf({ drafts: [{ id: "a", subject: "A", body: "" }, { id: "b", subject: "B", body: "" }] }),
+    readOf({ drafts: [{ id: "a", recipientId: "c-a", subject: "A", body: "" }, { id: "b", recipientId: "c-b", subject: "B", body: "" }] }),
     refused(/^Drafts 1 and 2 of this run have the same body/),
   );
   // The same subject is no collision: the title is not the key.
@@ -502,7 +503,7 @@ test("D35 bodies that differ as strings but have the same UTF-8 bytes are refuse
   ];
   for (const [first, second] of cases) {
     await assert.rejects(
-      readOf({ drafts: [{ id: "a", subject: "A", body: first }, { id: "b", subject: "B", body: second }] }),
+      readOf({ drafts: [{ id: "a", recipientId: "c-a", subject: "A", body: first }, { id: "b", recipientId: "c-b", subject: "B", body: second }] }),
       refused(/^Drafts 1 and 2 of this run have the same body/),
     );
   }
@@ -539,7 +540,7 @@ test("B1 a draft for an approved recipient with another email address is refused
 
 test("B2 a draft whose recipient is not on the approved list is refused, naming the recipient", async () => {
   const drafts = [BOUND[0], { ...BOUND[1], recipientId: "c-9" }];
-  await assert.rejects(readOf({ drafts }, APPROVED), refused(/^Draft 2 of this run is for contact c-9, which is not on the approved recipient list/));
+  await assert.rejects(readOf({ drafts }, APPROVED), refused(/^Draft 2 of this run is for a contact that is not on the approved recipient list\./));
   // The contact the host's send reads is contactId before recipientId: a contactId that is not approved is refused too.
   await assert.rejects(
     readOf({ drafts: [BOUND[0], { ...BOUND[1], contactId: "c-9" }] }, APPROVED),
@@ -547,7 +548,7 @@ test("B2 a draft whose recipient is not on the approved list is refused, naming 
   );
   await assert.rejects(
     readOf({ drafts: [BOUND[0], { ...BOUND[1], recipientId: undefined, contactId: "c-9" }] }, APPROVED),
-    refused(/^Draft 2 of this run is for contact c-9, which is not on the approved recipient list/),
+    refused(/^Draft 2 of this run is for a contact that is not on the approved recipient list\./),
   );
 });
 
@@ -622,6 +623,125 @@ test("B7 a run without an approved recipient list, or with a list that is not on
       readOf({ drafts: BOUND }, listOf([APPROVED.data.confirmedRecipients[0], row])),
       refused(/^Approved recipient 2 of this run /),
     );
+  }
+});
+
+// A refusal never repeats a recipient field a draft wrote until it has been checked against the approved record: the
+// bindings come first, and every later message names a recipient by its approved record.
+test("B8 two equal bodies, one of them for an unapproved address, are refused by the binding, never repeating the address", async () => {
+  const evil = "mallory@evil.example";
+  const same = "Hello there";
+  // The draft for an approved contact that wrote another address.
+  const otherAddress = [{ ...BOUND[0], body: same }, { ...BOUND[1], recipientEmail: evil, body: same }];
+  await assert.rejects(readOf({ drafts: otherAddress }, APPROVED), (error) => {
+    assertRefusal(error);
+    assert.match(error.message, /^Draft 2 of this run, for Ben Ito, has a recipient email that is not the approved recipient's/);
+    assert.ok(!error.message.includes(evil));
+    return true;
+  });
+  // The draft for a contact that is not on the list, with the address in its fields.
+  const otherContact = [{ ...BOUND[0], body: same }, { ...BOUND[1], recipientId: "c-9", recipientEmail: evil, body: same }];
+  await assert.rejects(readOf({ drafts: otherContact }, APPROVED), (error) => {
+    assertRefusal(error);
+    assert.match(error.message, /^Draft 2 of this run is for a contact that is not on the approved recipient list/);
+    assert.ok(!error.message.includes(evil) && !error.message.includes("c-9"));
+    return true;
+  });
+});
+
+test("B9 two equal bodies of two approved recipients are refused naming both by their approved labels", async () => {
+  const approved = listOf([
+    { contactId: "c-1", name: "Ada Lopez", email: "ada@example.com" },
+    { contactId: "c-2", name: "", email: "ben@example.com" },
+  ]);
+  const drafts = [
+    { id: "d-1", recipientId: "c-1", recipientName: "  Ada   Lopez ", recipientEmail: " ADA@Example.com ", subject: "One", body: "Same" },
+    { id: "d-2", recipientId: "c-2", recipientEmail: " BEN@EXAMPLE.COM", subject: "Two", body: "Same" },
+  ];
+  await assert.rejects(readOf({ drafts }, approved), refused(/^Drafts 1 and 2 of this run have the same body, .*: Ada Lopez and ben@example\.com\. Change the body of one of them\.$/));
+});
+
+test("B10 no refusal of the tool repeats a recipient field of a draft that the approved record did not confirm", async () => {
+  const address = "zz-marker-address@evil.example";
+  const name = "ZZ Marker Name";
+  const company = "ZZ Marker Company";
+  const markers = [address, name, company, "zz-marker-contact"];
+  const written = { recipientEmail: address, recipientName: name, recipientCompany: company };
+  const text = (n) => ({ subject: `Subject ${n}`, body: `Body ${n}` });
+  const ada = { contactId: "c-1", name: "Ada Lopez", email: "ada@example.com", accountName: "Acme" };
+  const ben = { contactId: "c-2", name: "Ben Ito", email: "ben@example.com", accountName: "Bento" };
+  const adaDraft = { id: "d-1", recipientId: "c-1", recipientName: "Ada Lopez", recipientEmail: "ada@example.com", ...text(1) };
+  const scenarios = {
+    "not a draft": [{ drafts: [adaDraft, "text"] }, [ada, ben]],
+    "id that is no text": [{ drafts: [adaDraft, { id: 7, recipientId: "c-2", ...written, ...text(2) }] }, [ada, ben]],
+    "subject that is no text": [{ drafts: [adaDraft, { recipientId: "c-2", ...written, subject: 4, body: "x" }] }, [ada, ben]],
+    "blank subject": [{ drafts: [adaDraft, { recipientId: "c-2", ...written, subject: " ", body: "x" }] }, [ada, ben]],
+    "no contact": [{ drafts: [adaDraft, { id: "d-2", ...written, ...text(2) }] }, [ada, ben]],
+    "two contacts": [{ drafts: [adaDraft, { recipientId: "c-2", contactId: "zz-marker-contact", ...written, ...text(2) }] }, [ada, ben]],
+    "contact not approved": [{ drafts: [adaDraft, { recipientId: "zz-marker-contact", ...written, ...text(2) }] }, [ada, ben]],
+    "contactId not approved": [{ drafts: [adaDraft, { contactId: "zz-marker-contact", ...written, ...text(2) }] }, [ada, ben]],
+    "contact twice": [{ drafts: [adaDraft, { recipientId: "c-1", ...written, ...text(2) }] }, [ada, ben]],
+    "address not approved": [{ drafts: [adaDraft, { recipientId: "c-2", ...written, recipientName: "Ben Ito", ...text(2) }] }, [ada, ben]],
+    "name not approved": [{ drafts: [adaDraft, { recipientId: "c-2", ...written, recipientEmail: "ben@example.com", ...text(2) }] }, [ada, ben]],
+    "no draft for an approved recipient": [{ drafts: [adaDraft] }, [ada, ben]],
+    "equal bodies, address not approved": [{ drafts: [adaDraft, { recipientId: "c-2", ...written, subject: "S", body: adaDraft.body }] }, [ada, ben]],
+    "equal bodies, contact not approved": [{ drafts: [adaDraft, { recipientId: "zz-marker-contact", ...written, subject: "S", body: adaDraft.body }] }, [ada, ben]],
+    "equal bodies of approved recipients": [
+      { drafts: [{ ...adaDraft, recipientCompany: company }, { id: "d-2", recipientId: "c-2", recipientName: "Ben Ito", recipientEmail: "ben@example.com", recipientCompany: company, subject: "S", body: adaDraft.body }] },
+      [ada, ben],
+    ],
+    "one id": [{ drafts: [{ ...adaDraft, recipientCompany: company }, { id: "d-1", recipientId: "c-2", recipientName: "Ben Ito", recipientEmail: "ben@example.com", recipientCompany: company, ...text(2) }] }, [ada, ben]],
+    "one email": [
+      { drafts: [{ ...adaDraft, recipientCompany: company }, { id: "d-2", recipientId: "c-2", recipientName: "Ben Ito", recipientEmail: "ada@example.com", recipientCompany: company, ...text(2) }] },
+      [ada, { ...ben, email: "ada@example.com" }],
+    ],
+    "the id __proto__": [{ drafts: [{ ...adaDraft, id: "__proto__", recipientCompany: company }, { id: "d-2", recipientId: "c-2", recipientName: "Ben Ito", recipientEmail: "ben@example.com", ...text(2) }] }, [ada, ben]],
+  };
+  for (const [what, [data, rows]] of Object.entries(scenarios)) {
+    await assert.rejects(readOf(data, listOf(rows)), (error) => {
+      assertRefusal(error);
+      for (const marker of markers) assert.ok(!error.message.includes(marker), `${what}: the refusal repeats ${marker}`);
+      return true;
+    }, what);
+  }
+});
+
+// A draft's contact is its contactId, else its recipientId (trimmed), as the host's send reads it: one definition for the
+// binding and for what is handed on.
+test("B11 a draft that names its contact by contactId only, by recipientId only, or by both equal is accepted and bound", async () => {
+  const text = (n) => ({ subject: `Subject ${n}`, body: `Body ${n}`, status: "draft" });
+  const approved = listOf([
+    { contactId: "c-1", name: "Ada Lopez", email: "ada@example.com", accountName: "Acme" },
+    { contactId: "c-2", name: "Ben Ito", email: "ben@example.com", accountName: "Bento" },
+    { contactId: "c-3", name: "Cy Oz", email: "cy@example.com", accountName: "Cyco" },
+  ]);
+  const drafts = [
+    { contactId: " c-1 ", recipientEmail: "ada@example.com", ...text(1) },
+    { recipientId: "c-2", ...text(2) },
+    { contactId: "c-3", recipientId: " c-3", recipientName: "Cy Oz", ...text(3) },
+  ];
+  const answer = await readOf({ drafts }, approved);
+  assert.deepEqual(answer.recipients, [
+    { name: "Ada Lopez", email: "ada@example.com", company: "Acme" },
+    { name: "Ben Ito", email: "ben@example.com", company: "Bento" },
+    { name: "Cy Oz", email: "cy@example.com", company: "Cyco" },
+  ]);
+  // Whichever field the draft wrote, the draft handed on carries its contact as recipientId, so that the screen keys it
+  // and the send finds the same person; the approved recipient fields fill in.
+  assert.deepEqual(
+    answer.draftBundle.draftedEmails.map((draft) => [draft.recipientId.trim(), draft.recipientName, draft.recipientEmail]),
+    [["c-1", "Ada Lopez", "ada@example.com"], ["c-2", "Ben Ito", "ben@example.com"], ["c-3", "Cy Oz", "cy@example.com"]],
+  );
+});
+
+test("B12 a draft that names two different contacts, or none, is refused with its position", async () => {
+  const text = { subject: "Subject", body: "Body", status: "draft" };
+  await assert.rejects(
+    readOf({ drafts: [BOUND[0], { ...BOUND[1], contactId: "c-1" }] }, APPROVED),
+    refused(/^Draft 2 of this run names two different contacts/),
+  );
+  for (const row of [{ ...text }, { id: "d-2", recipientEmail: "ben@example.com", ...text }, { contactId: " ", recipientId: "", ...text }]) {
+    await assert.rejects(readOf({ drafts: [BOUND[0], row] }, APPROVED), refused(/^Draft 2 of this run names no recipient/));
   }
 });
 
