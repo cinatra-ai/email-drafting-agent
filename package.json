@@ -44,7 +44,8 @@
     "tools": [
       {
         "name": "saved_drafts",
-        "module": "./cinatra/tools/saved-drafts.mjs"
+        "module": "./cinatra/tools/saved-drafts.mjs",
+        "embeddable": true
       }
     ],
     "ownerOrgId": null
