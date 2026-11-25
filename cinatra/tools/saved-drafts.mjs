@@ -30,10 +30,12 @@
 // and last name), its email and its company (accountName, company or
 // companyName), "" where the list holds none. A draft keeps a recipient field
 // when the approved recipient has a value for it or the draft wrote it. A draft
-// that wrote only a contactId is handed on with that contact as its recipientId,
-// so that the screen keys it and the send finds the same person. A message that
-// names a recipient uses the approved record's name, else its approved address,
-// and the checks that name one run only after every draft is bound: before
+// that wrote only a contactId, or wrote its contact with spaces around it, is handed
+// on with the approved contact as its recipientId, exactly as the list writes it, so
+// that the screen keys it and the send finds the same person; no recipient field a
+// draft wrote survives but where the approved recipient holds no value for it. A
+// message that names a recipient uses the approved record's name, else its approved
+// address, and the checks that name one run only after every draft is bound: before
 // that, a refusal names a draft by its position only. A run
 // that names no list, a list that is not a recipient list, and a row that is
 // not a recipient or names no contact are refused, so the run ends with the
@@ -130,6 +132,8 @@ const nonEmpty = (value) => typeof value === "string" && value.trim() !== "";
 const trimmedOrNone = (value) => (nonEmpty(value) ? value.trim() : undefined);
 const textOrEmpty = (value) => (typeof value === "string" ? value.trim() : "");
 const sameEmail = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+// The one comparable form of a name: one line, single spaces. Both sides of a name comparison take it, and the approved
+// name is handed on in it, whichever fields the name was built from.
 const oneLine = (text) => text.replace(/\s+/g, " ").trim();
 const short = (text) => {
   const line = oneLine(text);
@@ -161,9 +165,9 @@ const approvedRecipients = (list) => {
       );
     }
     if (byContact.has(contact)) continue;
-    const name =
-      oneLine(textOrEmpty(fields.get("name"))) ||
-      [textOrEmpty(fields.get("firstName")), textOrEmpty(fields.get("lastName"))].filter((part) => part !== "").join(" ");
+    const name = oneLine(
+      textOrEmpty(fields.get("name")) || [fields.get("firstName"), fields.get("lastName")].map(textOrEmpty).join(" "),
+    );
     const email = textOrEmpty(fields.get("email")) || textOrEmpty(fields.get("recipientEmail"));
     const company =
       textOrEmpty(fields.get("accountName")) || textOrEmpty(fields.get("company")) || textOrEmpty(fields.get("companyName"));
@@ -298,7 +302,7 @@ export async function extensionTool({ input, ports }) {
         `Draft ${position} of this run, for ${approvedLabel(recipient)}, has a recipient email that is not the approved recipient's.`,
       );
     }
-    if (draft.recipientName !== undefined && oneLine(draft.recipientName) !== recipient.name) {
+    if (draft.recipientName !== undefined && oneLine(draft.recipientName) !== oneLine(recipient.name)) {
       throw new ExtensionToolCallRefusal(
         `Draft ${position} of this run, for ${approvedLabel(recipient)}, has a recipient name that is not the approved recipient's.`,
       );
@@ -310,9 +314,9 @@ export async function extensionTool({ input, ports }) {
     ]) {
       if (value !== "" || draft[field] !== undefined) draft[field] = value;
     }
-    // The screen keys a draft by its recipientId and the send reads its contact: the draft keeps the contact it was
-    // bound by, so that both find the same person also when the draft wrote only a contactId.
-    if (!nonEmpty(draft.recipientId)) draft.recipientId = contact;
+    // The screen keys a draft by its recipientId and the send reads its contact: the draft is handed on under the approved
+    // contact exactly as the list writes it, whatever the draft wrote (padded, or only a contactId).
+    draft.recipientId = recipient.contact;
     approvedOf.push(recipient);
     recipients.push({ name: recipient.name, email: recipient.email, company: recipient.company });
   }

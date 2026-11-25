@@ -704,6 +704,14 @@ test("B10 no refusal of the tool repeats a recipient field of a draft that the a
       return true;
     }, what);
   }
+  // A draft that is accepted hands on none of the recipient fields it wrote that the approved record can replace.
+  const accepted = await readOf(
+    { drafts: [{ ...adaDraft, recipientId: " c-1 ", recipientCompany: company }, { id: "d-2", recipientId: "c-2", recipientEmail: "BEN@example.com", recipientName: "Ben  Ito", recipientCompany: company, ...text(2) }] },
+    listOf([ada, ben]),
+  );
+  const handedOn = JSON.stringify(accepted);
+  for (const marker of markers) assert.ok(!handedOn.includes(marker), `the output repeats ${marker}`);
+  assert.ok(!handedOn.includes("BEN@example.com") && !handedOn.includes("Ben  Ito") && !handedOn.includes(" c-1 "));
 });
 
 // A draft's contact is its contactId, else its recipientId (trimmed), as the host's send reads it: one definition for the
@@ -729,9 +737,79 @@ test("B11 a draft that names its contact by contactId only, by recipientId only,
   // Whichever field the draft wrote, the draft handed on carries its contact as recipientId, so that the screen keys it
   // and the send finds the same person; the approved recipient fields fill in.
   assert.deepEqual(
-    answer.draftBundle.draftedEmails.map((draft) => [draft.recipientId.trim(), draft.recipientName, draft.recipientEmail]),
+    answer.draftBundle.draftedEmails.map((draft) => [draft.recipientId, draft.recipientName, draft.recipientEmail]),
     [["c-1", "Ada Lopez", "ada@example.com"], ["c-2", "Ben Ito", "ben@example.com"], ["c-3", "Cy Oz", "cy@example.com"]],
   );
+});
+
+// One comparable form of a name serves both sides, whatever fields the approved name was built from.
+test("B13 an approved name with repeated inner white space, from one field or from two, matches the draft's normally spaced name", async () => {
+  const text = (n) => ({ subject: `Subject ${n}`, body: `Body ${n}`, status: "draft" });
+  const approved = listOf([
+    { contactId: "c-1", firstName: "Ada   Maria", lastName: " Lopez ", email: "ada@example.com", accountName: "Acme" },
+    { contactId: "c-2", name: "Ben \t  Ito", email: "ben@example.com", accountName: "Bento" },
+    { contactId: "c-3", firstName: "Cy", lastName: "", email: "cy@example.com", accountName: "Cyco" },
+  ]);
+  const drafts = [
+    { recipientId: "c-1", recipientName: "Ada Maria Lopez", ...text(1) },
+    { recipientId: "c-2", recipientName: " Ben   Ito", ...text(2) },
+    { recipientId: "c-3", recipientName: "Cy", ...text(3) },
+  ];
+  const answer = await readOf({ drafts }, approved);
+  // The name handed on is the approved name as one clean line.
+  assert.deepEqual(answer.recipients.map((recipient) => recipient.name), ["Ada Maria Lopez", "Ben Ito", "Cy"]);
+  assert.deepEqual(answer.draftBundle.draftedEmails.map((draft) => draft.recipientName), ["Ada Maria Lopez", "Ben Ito", "Cy"]);
+  // A truly different name is still refused.
+  for (const other of ["Ada Lopez", "Ada Maria  Lopes", "Ada Marialopez"]) {
+    await assert.rejects(
+      readOf({ drafts: [{ recipientId: "c-1", recipientName: other, ...text(1) }, drafts[1], drafts[2]] }, approved),
+      refused(/^Draft 1 of this run, for Ada Maria Lopez, has a recipient name that is not the approved recipient's\.$/),
+    );
+  }
+});
+
+test("B14 a draft that wrote a padded contact is bound and handed on under exactly the approved contact", async () => {
+  const text = (n) => ({ subject: `Subject ${n}`, body: `Body ${n}`, status: "draft" });
+  const approved = listOf([
+    { contactId: " c-1 ", name: "Ada Lopez", email: "ada@example.com", accountName: "Acme" },
+    { contactId: "c-2", name: "Ben Ito", email: "ben@example.com", accountName: "Bento" },
+    { contactId: "c-3", name: "Cy Oz", email: "cy@example.com", accountName: "Cyco" },
+  ]);
+  const drafts = [
+    { recipientId: " c-1", ...text(1) },
+    { recipientId: "c-2 ", contactId: "c-2", ...text(2) },
+    { recipientId: " c-3 ", contactId: "\tc-3", ...text(3) },
+  ];
+  const answer = await readOf({ drafts }, approved);
+  assert.deepEqual(answer.draftBundle.draftedEmails.map((draft) => draft.recipientId), ["c-1", "c-2", "c-3"]);
+  // The output carries the contact in recipientId alone: no padded contactId of the draft survives.
+  for (const draft of answer.draftBundle.draftedEmails) assert.ok(!("contactId" in draft));
+});
+
+test("B15 the recipient fields of a bound draft are exactly the approved record's, whatever the draft wrote", async () => {
+  const approved = listOf([
+    { contactId: "c-1", firstName: "Ada", lastName: "Lopez", email: " Ada@Example.com ", accountName: " Acme " },
+    { contactId: "c-2", name: "Ben Ito", email: "ben@example.com", company: "Bento" },
+  ]);
+  const drafts = [
+    {
+      id: "d-1", recipientId: " c-1 ", recipientName: "  Ada   Lopez ", recipientEmail: " ADA@EXAMPLE.COM ", recipientCompany: "Other Co",
+      subject: " Kept subject ", body: "Kept  body\n", status: "draft", followUpDay: 3,
+    },
+    { id: "d-2", recipientId: "c-2", recipientName: "Ben\tIto", recipientEmail: "BEN@example.com", recipientCompany: "BENTO", subject: "Two", body: "Two body", status: "reviewed" },
+  ];
+  const answer = await readOf({ drafts }, approved);
+  assert.deepEqual(answer.draftBundle.draftedEmails, [
+    {
+      id: "d-1", recipientId: "c-1", recipientName: "Ada Lopez", recipientEmail: "Ada@Example.com", recipientCompany: "Acme",
+      subject: " Kept subject ", body: "Kept  body\n", status: "draft", followUpDay: 3,
+    },
+    { id: "d-2", recipientId: "c-2", recipientName: "Ben Ito", recipientEmail: "ben@example.com", recipientCompany: "Bento", subject: "Two", body: "Two body", status: "reviewed" },
+  ]);
+  assert.deepEqual(answer.recipients, [
+    { name: "Ada Lopez", email: "Ada@Example.com", company: "Acme" },
+    { name: "Ben Ito", email: "ben@example.com", company: "Bento" },
+  ]);
 });
 
 test("B12 a draft that names two different contacts, or none, is refused with its position", async () => {
