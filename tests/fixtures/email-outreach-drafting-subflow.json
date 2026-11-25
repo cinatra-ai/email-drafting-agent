@@ -147,6 +147,9 @@
       "$component_ref": "drafts-inputs_missing"
     },
     {
+      "$component_ref": "drafts-campaign_missing"
+    },
+    {
       "$component_ref": "drafts-draft"
     },
     {
@@ -217,9 +220,30 @@
     },
     {
       "component_type": "ControlFlowEdge",
+      "name": "drafts-check_inputs_no_campaign_to_campaign_missing",
+      "from_node": {
+        "$component_ref": "drafts-check_inputs"
+      },
+      "to_node": {
+        "$component_ref": "drafts-campaign_missing"
+      },
+      "from_branch": "no_campaign"
+    },
+    {
+      "component_type": "ControlFlowEdge",
       "name": "drafts-inputs_missing_to_end",
       "from_node": {
         "$component_ref": "drafts-inputs_missing"
+      },
+      "to_node": {
+        "$component_ref": "drafts-end"
+      }
+    },
+    {
+      "component_type": "ControlFlowEdge",
+      "name": "drafts-campaign_missing_to_end",
+      "from_node": {
+        "$component_ref": "drafts-campaign_missing"
       },
       "to_node": {
         "$component_ref": "drafts-end"
@@ -353,6 +377,18 @@
     },
     {
       "component_type": "DataFlowEdge",
+      "name": "drafts-start_to_check_inputs_predicate_campaignId",
+      "source_node": {
+        "$component_ref": "drafts-start"
+      },
+      "source_output": "campaignId",
+      "destination_node": {
+        "$component_ref": "drafts-check_inputs_predicate"
+      },
+      "destination_input": "campaignId"
+    },
+    {
+      "component_type": "DataFlowEdge",
       "name": "drafts-uuid_match_to_predicate_matches",
       "source_node": {
         "$component_ref": "drafts-uuid_match"
@@ -458,6 +494,18 @@
         "$component_ref": "drafts-file_drafts"
       },
       "destination_input": "agent_run_id"
+    },
+    {
+      "component_type": "DataFlowEdge",
+      "name": "drafts-start_to_file_drafts_campaignId",
+      "source_node": {
+        "$component_ref": "drafts-start"
+      },
+      "source_output": "campaignId",
+      "destination_node": {
+        "$component_ref": "drafts-file_drafts"
+      },
+      "destination_input": "campaignId"
     },
     {
       "component_type": "DataFlowEdge",
@@ -736,7 +784,7 @@
         "cinatra": {
           "riskClass": "read_only",
           "requiresApproval": false,
-          "description": "The agent reads the drafts this run saved, so the bodies filed for the review and handed on are the drafts the send acts on. It binds each draft to exactly one recipient of the run's approved recipient list and hands on each draft's recipient (name, email, company) as the approved list names it, in draft order. A saved bundle that is missing or holds no drafts, a draft for a contact that is not approved or with an address or name that is not the approved one, two drafts for one recipient, and an approved recipient without a draft end the run with the reason before anything is filed."
+          "description": "The agent reads the drafts this run saved, so the bodies filed for the review and handed on are the drafts the send acts on. It binds each draft to exactly one recipient of the run's approved recipient list and hands on each draft's recipient (name, email, company) as the approved list names it, in draft order. Each draft also carries the approved contact as its contactId, which the filing stores on its body. A saved bundle that is missing or holds no drafts, a draft for a contact that is not approved or with an address or name that is not the approved one, two drafts for one recipient, and an approved recipient without a draft end the run with the reason before anything is filed."
         }
       }
     },
@@ -819,6 +867,13 @@
           "content": "{# pyagentspec-input-hint (do not remove): {{ draftBundle }} #}{{ draftBundle.draftedEmails | tojson }}",
           "memberContentField": "body",
           "memberTitleField": "subject",
+          "memberDataFields": [
+            "contactId"
+          ],
+          "memberData": {
+            "campaignId": "{{ campaignId }}"
+          },
+          "memberRunIdField": "runId",
           "node_id": "drafts-file_drafts"
         },
         "agent_run_id": "{{ agent_run_id }}"
@@ -828,6 +883,14 @@
           "title": "draftBundle",
           "type": "object",
           "default": {}
+        },
+        {
+          "title": "campaignId",
+          "type": "string",
+          "json_schema": {
+            "format": "uuid"
+          },
+          "default": ""
         },
         {
           "title": "agent_run_id",
@@ -865,7 +928,7 @@
           "riskClass": "write",
           "requiresApproval": false,
           "publishes": false,
-          "description": "The host files each saved draft's body as its own email body, in draft order, titled by its subject: the filed bytes are the saved body, so the send reuses each one. The reference pairs it answers are the review's target set and the bodies this flow hands on."
+          "description": "The host files each saved draft's body as its own email body, in draft order, titled by its subject: the filed bytes are the saved body, so the send reuses each one. Each body is filed with its contact (the read step writes it from the approved recipient list), the campaign of this run and the id of this run. The reference pairs it answers are the review's target set and the bodies this flow hands on."
         }
       }
     },
@@ -958,6 +1021,10 @@
       "inputs": [
         {
           "title": "matches"
+        },
+        {
+          "title": "campaignId",
+          "type": "string"
         }
       ],
       "outputs": [
@@ -971,7 +1038,7 @@
       ],
       "input_mapping": {},
       "output_mapping": {},
-      "template": "{% if matches and (matches|length > 0) %}present{% else %}missing{% endif %}",
+      "template": "{% if not (matches and (matches|length > 0)) %}missing{% elif not ((campaignId or '')|trim) %}no_campaign{% else %}present{% endif %}",
       "component_plugin_name": "NodesPlugin",
       "component_plugin_version": "26.1.0"
     },
@@ -993,10 +1060,12 @@
       "outputs": [],
       "branches": [
         "default",
-        "skip"
+        "skip",
+        "no_campaign"
       ],
       "mapping": {
-        "present": "skip"
+        "present": "skip",
+        "no_campaign": "no_campaign"
       }
     },
     "drafts-inputs_missing": {
@@ -1008,6 +1077,18 @@
       "metadata": {
         "cinatra": {
           "purpose": "plain-language-ending-for-the-retired-data-gate"
+        }
+      }
+    },
+    "drafts-campaign_missing": {
+      "component_type": "OutputMessageNode",
+      "id": "drafts-campaign_missing",
+      "name": "No campaign to draft for",
+      "inputs": [],
+      "message": "This run stopped before drafting: it was started without a campaign, and every email body is filed and reviewed for one campaign, so nothing was drafted. Start the drafting from its campaign.",
+      "metadata": {
+        "cinatra": {
+          "purpose": "plain-language-ending-for-a-run-without-a-campaign"
         }
       }
     }

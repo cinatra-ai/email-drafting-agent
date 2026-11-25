@@ -199,6 +199,121 @@ test("no Regenerate declaration is made over the list filing until the host can 
   assert.equal(pkg.cinatra.lifecycle?.regenerate, undefined);
 });
 
+// Each filed body carries its contact, its campaign and its run (cinatra-ai/cinatra#3089).
+//
+// The host's send reads a body's own data: the contact it is for (contactId), the campaign it was
+// reviewed in (campaignId) and the run that filed it (runId). The list filing stores typed data per
+// member from three literal inputs: `memberDataFields` (member fields stored under their own name,
+// each a non-blank string the member supplies), `memberData` (call-wide values the host stamps on
+// every member; a member that carries one is refused) and `memberRunIdField` (the field the host
+// fills with the calling run's id; a member that carries it is refused). The contact is written by
+// the read step, which has no model, from the approved recipient list; the campaign is the flow's
+// start input; the run id is the host's.
+test("the filing call declares the typed member data exactly", () => {
+  assert.deepEqual(input, {
+    extension: "@cinatra-ai/email-artifacts",
+    objectTypeId: "@cinatra-ai/email:body",
+    declaredMime: "text/markdown",
+    content: "{# pyagentspec-input-hint (do not remove): {{ draftBundle }} #}{{ draftBundle.draftedEmails | tojson }}",
+    memberContentField: "body",
+    memberTitleField: "subject",
+    memberDataFields: ["contactId"],
+    memberData: { campaignId: "{{ campaignId }}" },
+    memberRunIdField: "runId",
+    node_id: FILE_ID,
+  });
+});
+
+test("the flow's campaign reaches the filing step", () => {
+  assert.ok(dataEdges.includes(`start.campaignId -> ${FILE_ID}.campaignId`));
+  assert.ok((fileNode.inputs ?? []).some((i) => i.title === "campaignId" && i.type === "string"));
+  assert.ok(oas.inputs.some((i) => i.title === "campaignId"));
+});
+
+// A blank campaign is refused before anything is drafted: the host refuses a blank stamped value, and
+// the send refuses a body with no campaign, so a run without one could only draft and review emails
+// that nobody can send.
+test("a run without a campaign stops before drafting, with its own sentence", () => {
+  const branchEdges = oas.control_flow_connections.map(
+    (e) => `${e.from_node.$component_ref}${e.from_branch ? `[${e.from_branch}]` : ""} -> ${e.to_node.$component_ref}`,
+  );
+  assert.ok(dataEdges.includes("start.campaignId -> check_inputs_predicate.campaignId"));
+  const predicate = refs.check_inputs_predicate;
+  assert.ok(predicate.inputs.some((i) => i.title === "campaignId"));
+  assert.match(predicate.template, /no_campaign/);
+  assert.match(predicate.template, /campaignId/);
+  assert.deepEqual(refs.check_inputs.mapping, { present: "skip", no_campaign: "no_campaign" });
+  assert.ok(refs.check_inputs.branches.includes("no_campaign"));
+  assert.ok(oas.nodes.some((n) => n.$component_ref === "campaign_missing"));
+  assert.ok(branchEdges.includes("check_inputs[no_campaign] -> campaign_missing"));
+  assert.ok(branchEdges.includes("campaign_missing -> end"));
+  assert.ok(branchEdges.includes("check_inputs[skip] -> draft"));
+  assert.equal(branchEdges.filter((e) => e.endsWith(" -> draft")).length, 1, "drafting has one way in");
+  const message = refs.campaign_missing.message;
+  assert.match(message, /campaign/i);
+  assert.match(message, /before drafting/);
+  // The recipient list keeps its own sentence and is asked first.
+  assert.ok(branchEdges.includes("check_inputs[default] -> inputs_missing"));
+  assert.ok(predicate.template.indexOf("missing") < predicate.template.indexOf("no_campaign"));
+});
+
+async function readWith(drafts, rows) {
+  const ports = {
+    objects: {
+      read: async ({ objectId }) =>
+        objectId === "l-1"
+          ? { objectId: "l-1", type: "@cinatra-ai/campaigns:recipients", data: { confirmedRecipients: rows } }
+          : { objectId: "b-1", type: "@cinatra-ai/campaigns:email-draft-bundle", data: { drafts } },
+    },
+  };
+  return extensionTool({ input: { draftBundleRef: "b-1", confirmedRecipientsRef: "l-1" }, ports });
+}
+
+const approvedRows = [
+  { contactId: "c-1", name: "Ada", email: "ada@example.com" },
+  { contactId: "c-2", name: "Ben", email: "" },
+  { contactId: "c-3", name: "Cy", email: "cy@example.com" },
+];
+
+test("every member reaching the filing carries its approved contact as a non-blank contactId", async () => {
+  const drafts = [
+    { recipientId: "c-1", subject: "One", body: "Hi Ada" },
+    // The model wrote its contact with spaces, and for another draft only as contactId.
+    { recipientId: " c-2 ", subject: "Two", body: "Hi Ben" },
+    { contactId: "c-3", subject: "Three", body: "Hi Cy" },
+  ];
+  const { draftBundle } = await readWith(drafts, approvedRows);
+  assert.deepEqual(
+    draftBundle.draftedEmails.map((m) => m.contactId),
+    ["c-1", "c-2", "c-3"],
+  );
+  for (const member of draftBundle.draftedEmails) {
+    assert.ok(member.contactId.trim().length > 0 && member.contactId.length <= 512);
+  }
+});
+
+test("a member never carries a field the host stamps: campaignId, runId", async () => {
+  // A draft that names a campaign or a run cannot set them: the host refuses a member that carries a
+  // stamped field, so the read step hands on none.
+  const drafts = [
+    { recipientId: "c-1", subject: "One", body: "Hi Ada", campaignId: "other-campaign", runId: "other-run" },
+    { recipientId: "c-2", subject: "Two", body: "Hi Ben" },
+    { recipientId: "c-3", subject: "Three", body: "Hi Cy" },
+  ];
+  const { draftBundle } = await readWith(drafts, approvedRows);
+  for (const member of draftBundle.draftedEmails) {
+    assert.equal(Object.hasOwn(member, input.memberRunIdField), false);
+    for (const name of Object.keys(input.memberData)) assert.equal(Object.hasOwn(member, name), false);
+  }
+});
+
+test("a draft whose contactId and recipientId differ still ends the run", async () => {
+  await assert.rejects(
+    readWith([{ recipientId: "c-1", contactId: "c-2", subject: "One", body: "Hi" }], approvedRows),
+    /two different contacts/,
+  );
+});
+
 test("the version follows the pack's convention", () => {
-  assert.equal(pkg.version, "0.1.8");
+  assert.equal(pkg.version, "0.1.9");
 });

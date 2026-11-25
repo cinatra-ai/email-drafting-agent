@@ -44,7 +44,11 @@
 //
 // Each draft keeps the fields the review and the write-back read, as the
 // bundle saved them: the id, the recipient (with its company), the subject and
-// the body. Nothing else of the saved object is handed on. The module
+// the body, and carries the approved contact as its contactId: the filing step
+// stores it on the filed body. A draft carries no campaign and no run id: the
+// filing step takes the campaign from the flow's start and the run from the
+// host, and refuses a draft that names either. Nothing else of the saved
+// object is handed on. The module
 // reads only data fields that the saved object holds itself: an object or a
 // list with another prototype, an inherited field, or a getter or a setter is
 // refused, and no getter is run. The port answers with data parsed from
@@ -317,6 +321,9 @@ export async function extensionTool({ input, ports }) {
     // The screen keys a draft by its recipientId and the send reads its contact: the draft is handed on under the approved
     // contact exactly as the list writes it, whatever the draft wrote (padded, or only a contactId).
     draft.recipientId = recipient.contact;
+    // The filing stores each member's contactId on its body (the host's list filing, memberDataFields), and the send reads it
+    // there: it is the approved contact, written here without a model, never a field the draft wrote.
+    draft.contactId = recipient.contact;
     approvedOf.push(recipient);
     recipients.push({ name: recipient.name, email: recipient.email, company: recipient.company });
   }
