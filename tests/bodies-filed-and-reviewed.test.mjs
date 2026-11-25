@@ -237,11 +237,9 @@ test("a run without a campaign stops before drafting, with its own sentence", ()
   const branchEdges = oas.control_flow_connections.map(
     (e) => `${e.from_node.$component_ref}${e.from_branch ? `[${e.from_branch}]` : ""} -> ${e.to_node.$component_ref}`,
   );
-  assert.ok(dataEdges.includes("start.campaignId -> check_inputs_predicate.campaignId"));
   const predicate = refs.check_inputs_predicate;
-  assert.ok(predicate.inputs.some((i) => i.title === "campaignId"));
+  assert.deepEqual(predicate.inputs.map((i) => i.title), ["matches", "campaignMatches"]);
   assert.match(predicate.template, /no_campaign/);
-  assert.match(predicate.template, /campaignId/);
   assert.deepEqual(refs.check_inputs.mapping, { present: "skip", no_campaign: "no_campaign" });
   assert.ok(refs.check_inputs.branches.includes("no_campaign"));
   assert.ok(oas.nodes.some((n) => n.$component_ref === "campaign_missing"));
@@ -358,27 +356,154 @@ test("a contact id with a line break or an invisible character is refused by pos
 });
 
 // The campaign id is the id of the saved campaign (the start input is declared format uuid, and the outreach flow
-// supplies the id its campaign-setup step saved), so the check asks for the real form, not for two readings of
-// "blank": the host trims with JavaScript's rules and the flow's Jinja with Python's, and they differ (U+FEFF is
-// space to one and not to the other). The template trims only what both read as space (space, tab, CR, LF) and
-// answers `present` only for 8-4-4-4-12 hexadecimal digits; any invisible, blank-like or overlong value is `no_campaign`.
-// The pack's tests are JavaScript and have no Jinja renderer, so these assertions pin the rule's parts in the template;
-// the rendered decision table (valid, U+FEFF, U+200B, padded, 37 characters, empty ...) is proven with Jinja itself.
-test("the campaign check answers present only for a UUID, and trims only what the host trims the same way", () => {
-  const template = refs.check_inputs_predicate.template;
-  assert.match(template, /campaignId/);
-  assert.ok(template.includes("|trim(' \\t\\r\\n')"), "trims space, tab, CR and LF only");
-  assert.ok(!template.includes("splitlines"), "no Python-only whitespace reading");
-  assert.ok(!/\|\s*trim\s*[%}|]/.test(template), "no bare trim");
-  assert.match(template, /length\s*==\s*36/);
-  for (const at of [8, 13, 18, 23]) assert.ok(template.includes(`[${at}] == '-'`), `a hyphen is required at ${at}`);
-  assert.match(template, /split\('-'\)\s*\|\s*length\s*==\s*5/);
-  assert.ok(template.includes("0123456789abcdefABCDEF-"), "every other character is a hexadecimal digit");
-  // The recipient list is asked first; every campaign fault ends the run on the same branch and sentence.
-  assert.ok(template.indexOf("missing") < template.indexOf("no_campaign"));
-  assert.ok(template.includes("{% else %}no_campaign{% endif %}"), "anything but the UUID form is no_campaign");
-  assert.match(refs.campaign_missing.message, /campaign id/);
-  assert.match(refs.campaign_missing.message, /before drafting/);
+// supplies the id its campaign-setup step saved), so the check asks for the real form. The form is tested by a
+// regex step, as the recipient list's id already is, and the decision template stays within the small grammar an
+// embedding flow's copy generator reads: only outputs, if/elif/else/endif, names, `length`, comparisons, and/or/not.
+const campaignNode = refs.campaign_match;
+const campaignPattern = campaignNode?.regex_pattern;
+
+test("the campaign id is tested by its own regex step, between the recipient check and the decision", () => {
+  assert.equal(campaignNode?.component_type, "PluginRegexNode");
+  assert.equal(campaignNode.return_first_match_only, false);
+  assert.ok(oas.nodes.some((n) => n.$component_ref === "campaign_match"));
+  assert.ok(controlEdges.includes("uuid_match -> campaign_match"));
+  assert.ok(controlEdges.includes("campaign_match -> check_inputs_predicate"));
+  assert.ok(!controlEdges.includes("uuid_match -> check_inputs_predicate"));
+  assert.ok(dataEdges.includes("start.campaignId -> campaign_match.text"));
+  assert.ok(dataEdges.includes("campaign_match.output -> check_inputs_predicate.campaignMatches"));
+  assert.ok(dataEdges.includes("uuid_match.output -> check_inputs_predicate.matches"));
+  assert.equal(dataEdges.filter((e) => e.endsWith(" -> check_inputs_predicate.campaignMatches")).length, 1);
+  assert.ok(!dataEdges.some((e) => e.endsWith(" -> check_inputs_predicate.campaignId")));
+});
+
+/** Python's re.findall on this pattern, as the runtime's regex step calls it (no flags), kept to the matches that are not empty. */
+function findall(pattern, text) {
+  return [...String(text).matchAll(new RegExp(pattern, "g"))].map((m) => (m[1] === undefined ? m[0] : m[1])).filter((m) => m !== "");
+}
+
+// The runtime's step is wayflowcore 26.1.2 RegexExtractionStep._invoke_step: re.findall(pattern, text, flags=0), empty
+// matches dropped, and, with return_first_match_only false, the list of matches (an empty list when none). The
+// pattern below has the same meaning in Python and in JavaScript (no \A, \Z or named group), so the table is checked here
+// with the same call shape, and with the real step in wayflowcore itself when the pull request is prepared.
+test("the campaign pattern matches exactly an 8-4-4-4-12 hexadecimal id with only ASCII white space around it", () => {
+  const U = "11111111-1111-4111-8111-111111111111";
+  const matches = (text) => findall(campaignPattern, text).length > 0;
+  for (const ok of [U, U.toUpperCase(), "abcdef01-2345-6789-ABCD-EF0123456789", ` ${U}`, `${U}\t`, `\n${U}\r\n`, `  ${U} \t\r\n`]) {
+    assert.ok(matches(ok), JSON.stringify(ok));
+  }
+  assert.deepEqual(findall(campaignPattern, `  ${U}\n`), [U], "the match is the id without the white space");
+  const refused = {
+    empty: "",
+    "spaces only": "   ",
+    "U+FEFF only": "﻿",
+    "U+200B only": "​",
+    "U+FEFF before an id": `﻿${U}`,
+    "U+FEFF after an id": `${U}﻿`,
+    "U+200B inside": `${U.slice(0, 10)}​${U.slice(11)}`,
+    "NBSP before an id": ` ${U}`,
+    "vertical tab before an id": `\v${U}`,
+    "36 characters, 35 hex": U.slice(1),
+    "37 characters": `${U}a`,
+    "35 characters": U.slice(0, 35),
+    "non-hex": `g${U.slice(1)}`,
+    "hyphen misplaced": "1111111-11111-4111-8111-111111111111",
+    "no hyphens": U.replaceAll("-", "") + "abcd",
+    "two ids": `${U} ${U}`,
+    "an id and text": `${U} x`,
+    "text and an id": `x ${U}`,
+    "id then a line then text": `${U}\nx`,
+    "a number": 12345,
+    "512 characters": "a".repeat(512),
+  };
+  for (const [name, text] of Object.entries(refused)) assert.equal(matches(text), false, name);
+});
+
+const GRAMMAR_FILTERS = new Set(["length"]);
+/** The constructs an embedding copy generator reads, and nothing else. */
+function templateProblems(template) {
+  const problems = [];
+  const blocks = [...template.matchAll(/\{%-?([\s\S]*?)-?%\}|\{\{([\s\S]*?)\}\}/g)];
+  const outside = template.replace(/\{%[\s\S]*?%\}|\{\{[\s\S]*?\}\}/g, "");
+  if (/[{}]/.test(outside)) problems.push("a stray brace outside a block");
+  for (const block of blocks) {
+    const statement = block[1]?.trim();
+    const expression = block[2]?.trim();
+    const source = statement ?? expression;
+    if (statement !== undefined && !/^(if\s|elif\s|else$|endif$)/.test(statement)) problems.push(`statement: ${statement}`);
+    if (/\[|\]/.test(source)) problems.push(`subscript or list: ${source}`);
+    for (const call of source.matchAll(/([A-Za-z_]\w*)\s*\(/g)) {
+      if (!["if", "elif", "not", "and", "or"].includes(call[1])) problems.push(`a call: ${call[0]}`);
+    }
+    if (/[\\"]/.test(source)) problems.push(`a backslash or double quote: ${source}`);
+    for (const filter of source.matchAll(/\|\s*(\w+)(\s*\()?/g)) {
+      if (!GRAMMAR_FILTERS.has(filter[1]) || filter[2]) problems.push(`filter: ${filter[0]}`);
+    }
+    const words = source.replace(/'[^']*'/g, "").replace(/\|\s*\w+/g, "").match(/[A-Za-z_][\w.]*/g) ?? [];
+    for (const word of words) {
+      if (!["if", "elif", "not", "and", "or"].includes(word) && !/^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(word)) problems.push(`name path: ${word}`);
+    }
+    if (/[^\w\s.|'<>=!()-]/.test(source.replace(/'[^']*'/g, ""))) problems.push(`character: ${source}`);
+  }
+  return problems;
+}
+
+test("the decision template holds only the constructs an embedding copy can read, and every name it renders is a fed input", () => {
+  const predicate = refs.check_inputs_predicate;
+  assert.deepEqual(templateProblems(predicate.template), []);
+  assert.ok(!predicate.template.includes("{% set"));
+  // The scanner itself refuses what it exists to refuse.
+  for (const bad of [
+    "{% set c = campaignId %}{% if c %}x{% endif %}",
+    "{% if c[8] == '-' %}x{% endif %}",
+    "{% if c.split('-') %}x{% endif %}",
+    "{% if c|trim %}x{% endif %}",
+    "{% if c|trim(' ') %}x{% endif %}",
+    "{% if c|length(1) %}x{% endif %}",
+    "{% if c|list|reject('in', 'a') %}x{% endif %}",
+    "{% for c in d %}x{% endfor %}",
+  ]) {
+    assert.notDeepEqual(templateProblems(bad), [], bad);
+  }
+  const names = new Set(predicate.inputs.map((i) => i.title));
+  const used = [...predicate.template.matchAll(/\b(matches|campaignMatches|campaignId)\b/g)].map((m) => m[1]);
+  for (const name of used) assert.ok(names.has(name), `${name} is not a declared input of the step`);
+  for (const name of names) assert.ok(dataEdges.filter((e) => e.endsWith(` -> check_inputs_predicate.${name}`)).length === 1, `${name} has not one edge`);
+});
+
+/** The decision template under the grammar's rules (a list is true when it holds an item), for the two lists it reads. */
+function decide(template, lists) {
+  const truthy = (list) => Array.isArray(list) && list.length > 0;
+  const match = template.match(/^\{% if (.+?) %\}(\w+)\{% elif (.+?) %\}(\w+)\{% else %\}(\w+)\{% endif %\}$/);
+  assert.ok(match, "the template is one if/elif/else");
+  const run = (condition) =>
+    Function(
+      "T", "matches", "campaignMatches",
+      `return ${condition.replace(/(\w+)\|length/g, "$1.length").replace(/\b(matches|campaignMatches)\b(?!\.length)/g, "T($1)").replace(/\bnot\b/g, "!").replace(/\band\b/g, "&&").replace(/\bor\b/g, "||")};`,
+    )(truthy, lists.matches, lists.campaignMatches);
+  return run(match[1]) ? match[2] : run(match[3]) ? match[4] : match[5];
+}
+
+test("the three outcomes run through the flow's edges: no recipient list, no usable campaign, drafting", () => {
+  const U = "11111111-1111-4111-8111-111111111111";
+  const listOf = (text, pattern) => findall(pattern, text);
+  const recipientPattern = refs.uuid_match.regex_pattern;
+  const edgeOf = (branchMapping, verdict) => branchMapping[verdict] ?? "default";
+  const route = (recipients, campaign) => {
+    const verdict = decide(refs.check_inputs_predicate.template, {
+      matches: listOf(recipients, recipientPattern),
+      campaignMatches: listOf(campaign, campaignPattern),
+    });
+    const branch = edgeOf(refs.check_inputs.mapping, verdict);
+    const edge = oas.control_flow_connections.find((e) => e.from_node.$component_ref === "check_inputs" && e.from_branch === branch);
+    return { verdict, to: edge.to_node.$component_ref };
+  };
+  assert.deepEqual(route(U, U), { verdict: "present", to: "draft" });
+  assert.deepEqual(route(U, ` ${U}\n`), { verdict: "present", to: "draft" });
+  assert.deepEqual(route("", U), { verdict: "missing", to: "inputs_missing" });
+  assert.deepEqual(route("", ""), { verdict: "missing", to: "inputs_missing" }, "the recipient list is asked first");
+  for (const campaign of ["", "﻿", "​", `﻿${U}`, `${U}a`, U.slice(1), 12345]) {
+    assert.deepEqual(route(U, campaign), { verdict: "no_campaign", to: "campaign_missing" }, JSON.stringify(campaign));
+  }
 });
 
 test("a draft whose contactId and recipientId differ still ends the run", async () => {
