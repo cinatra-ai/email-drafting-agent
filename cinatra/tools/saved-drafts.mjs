@@ -44,7 +44,11 @@
 //
 // Each draft keeps the fields the review and the write-back read, as the
 // bundle saved them: the id, the recipient (with its company), the subject and
-// the body. Nothing else of the saved object is handed on. The module
+// the body, and carries the approved contact as its contactId: the filing step
+// stores it on the filed body. A draft carries no campaign and no run id: the
+// filing step takes the campaign from the flow's start and the run from the
+// host, and refuses a draft that names either. Nothing else of the saved
+// object is handed on. The module
 // reads only data fields that the saved object holds itself: an object or a
 // list with another prototype, an inherited field, or a getter or a setter is
 // refused, and no getter is run. The port answers with data parsed from
@@ -89,6 +93,12 @@ const SHOWN_LISTS = ["draftedEmails", "drafts"];
 // The most bodies the filing step takes in one call (MAX_MATERIALIZE_LIST_MEMBERS of the platform's
 // artifact-materialize-shaper.ts). It is below the write-back's own bound of 2000 drafts per answer.
 const MAX_FILED_DRAFTS = 50;
+// The longest typed value the filing stores on a body (MATERIALIZE_LIST_DATA_MAX_VALUE_CHARS of the platform's
+// artifact-binding.ts), measured after trimming with String.prototype.trim as the platform does (it strips U+FEFF
+// too, so a contact of only that is blank, as it is there). An invisible value cannot be told apart by a person:
+// a control or format character (line breaks, U+200B, U+FEFF inside a value) or a line or paragraph separator.
+const MAX_TYPED_VALUE_CHARS = 512;
+const INVISIBLE = /[\p{C}\p{Zl}\p{Zp}]/u;
 
 class ExtensionToolCallRefusal extends Error {
   constructor(message) {
@@ -162,6 +172,14 @@ const approvedRecipients = (list) => {
     if (contact === undefined) {
       throw new ExtensionToolCallRefusal(
         `Approved recipient ${index + 1} of this run names no contact, so no draft can be bound to it.`,
+      );
+    }
+    // The filing stores the contact on the body as a typed value: the host takes a non-blank string of at most
+    // MAX_TYPED_VALUE_CHARS after trimming, and one that is over it refuses the whole filing. An invisible character or a
+    // line break is no value a person can read. The contact is already trimmed here; the refusal names the position only.
+    if (contact.length > MAX_TYPED_VALUE_CHARS || INVISIBLE.test(contact)) {
+      throw new ExtensionToolCallRefusal(
+        `Approved recipient ${index + 1} of this run has a contact id that cannot be stored on its email body (at most ${MAX_TYPED_VALUE_CHARS} characters, with no line break or invisible character), so no draft can be bound to it.`,
       );
     }
     if (byContact.has(contact)) continue;
@@ -317,6 +335,9 @@ export async function extensionTool({ input, ports }) {
     // The screen keys a draft by its recipientId and the send reads its contact: the draft is handed on under the approved
     // contact exactly as the list writes it, whatever the draft wrote (padded, or only a contactId).
     draft.recipientId = recipient.contact;
+    // The filing stores each member's contactId on its body (the host's list filing, memberDataFields), and the send reads it
+    // there: it is the approved contact, written here without a model, never a field the draft wrote.
+    draft.contactId = recipient.contact;
     approvedOf.push(recipient);
     recipients.push({ name: recipient.name, email: recipient.email, company: recipient.company });
   }

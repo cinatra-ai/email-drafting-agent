@@ -83,6 +83,9 @@ function assertRefusal(error) {
   return true;
 }
 
+// Each draft handed on carries its approved contact as contactId beside its recipientId (the filing stores it on the body).
+const withContact = (draft) => ({ ...draft, contactId: draft.recipientId.trim() });
+
 const DRAFTS = [
   { recipientId: "c-1", recipientEmail: "ada@example.com", subject: "Idea one", body: "Hello Ada", status: "draft" },
   { id: "d-2", recipientId: "c-2", recipientName: "Ben", recipientEmail: "ben@example.com", subject: "Idea two", body: "Hello Ben", status: "draft" },
@@ -94,7 +97,7 @@ test("D1 the saved drafts are handed under draftBundle.draftedEmails, in saved o
   assert.deepEqual(calls.reads, [{ objectId: "bundle-1" }, { objectId: "list-1" }]);
   assert.deepEqual(answer, {
     ok: true,
-    draftBundle: { draftedEmails: DRAFTS },
+    draftBundle: { draftedEmails: DRAFTS.map(withContact) },
     recipients: [
       { name: "", email: "ada@example.com", company: "" },
       { name: "Ben", email: "ben@example.com", company: "" },
@@ -139,7 +142,7 @@ test("D31 the recipients are the approved recipients, one per draft and in draft
 test("D2 a bundle that saved its drafts under draftedEmails is read from there first", async () => {
   const { ports } = makePorts({ saved: bundleOf({ draftedEmails: [DRAFTS[1]], drafts: [DRAFTS[0]] }) });
   const answer = await extensionTool({ input: INPUT, ports });
-  assert.deepEqual(answer.draftBundle.draftedEmails, [DRAFTS[1]]);
+  assert.deepEqual(answer.draftBundle.draftedEmails, [withContact(DRAFTS[1])]);
 });
 
 test("D3 each draft keeps only the fields the screen reads and the write-back matches on", async () => {
@@ -158,7 +161,7 @@ test("D3 each draft keeps only the fields the screen reads and the write-back ma
   const { ports } = makePorts({ saved: bundleOf({ drafts: [row] }) });
   const answer = await extensionTool({ input: INPUT, ports });
   assert.deepEqual(answer.draftBundle.draftedEmails, [
-    { recipientId: "c-3", recipientEmail: "cy@example.com", subject: "Idea three", body: "Hello Cy", status: "draft", followUpDay: 3 },
+    { recipientId: "c-3", contactId: "c-3", recipientEmail: "cy@example.com", subject: "Idea three", body: "Hello Cy", status: "draft", followUpDay: 3 },
   ]);
 });
 
@@ -214,14 +217,14 @@ test("D8 a followUpDay that is not a finite number is not handed on", async () =
   const days = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "3", null, true];
   const { ports } = makePorts({ saved: bundleOf({ drafts: days.map((followUpDay, i) => ({ ...rowOf(i), followUpDay })) }) });
   const answer = await extensionTool({ input: INPUT, ports });
-  assert.deepEqual(answer.draftBundle.draftedEmails, days.map((_, i) => rowOf(i)));
+  assert.deepEqual(answer.draftBundle.draftedEmails, days.map((_, i) => withContact(rowOf(i))));
 });
 
 test("D9 a draftedEmails that is not a list leaves the drafts to be read from drafts", async () => {
   for (const draftedEmails of ["Idea one", { 0: DRAFTS[0] }, null, 2]) {
     const { ports } = makePorts({ saved: bundleOf({ draftedEmails, drafts: DRAFTS }) });
     const answer = await extensionTool({ input: INPUT, ports });
-    assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS);
+    assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS.map(withContact));
   }
 });
 
@@ -251,7 +254,7 @@ test("D11 saved data that is null, a date or an instance of a class is no draft 
   // An object with a null prototype is a plain object, and it is read.
   const { ports } = makePorts({ saved: bundleOf(Object.assign(Object.create(null), { drafts: DRAFTS })) });
   const answer = await extensionTool({ input: INPUT, ports });
-  assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS);
+  assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS.map(withContact));
 });
 
 // A draft's own id is not a contact: a draft that names no contact (contactId or recipientId) is for no approved recipient.
@@ -267,7 +270,7 @@ test("D13 a draft that names its recipient only by recipientId is handed on", as
   const row = { recipientId: "c-9", subject: "Idea six", body: "Hello" };
   const { ports } = makePorts({ saved: bundleOf({ drafts: [row] }) });
   const answer = await extensionTool({ input: INPUT, ports });
-  assert.deepEqual(answer.draftBundle.draftedEmails, [row]);
+  assert.deepEqual(answer.draftBundle.draftedEmails, [withContact(row)]);
 });
 
 test("D14 a draft with no email and no contact names no recipient", async () => {
@@ -356,7 +359,7 @@ test("D20 a draft whose subject or body is not text is refused with its position
   // An empty body is text: the filing takes it as one body. An empty subject is not: it is the filed body's title.
   const emptyBody = { ...base, recipientId: "c-8", subject: "Idea eight", body: "" };
   const answer = await readOf({ drafts: [emptyBody] });
-  assert.deepEqual(answer.draftBundle.draftedEmails, [emptyBody]);
+  assert.deepEqual(answer.draftBundle.draftedEmails, [withContact(emptyBody)]);
 });
 
 test("D21 two drafts that the review would show under one id, or that name one recipient email, are refused", async () => {
@@ -375,7 +378,7 @@ test("D21 two drafts that the review would show under one id, or that name one r
   // Distinct ids with distinct emails pass, whichever field names each one.
   const distinct = [{ id: "d-1", recipientId: "c-1", recipientEmail: "kim@example.com", ...text }, { recipientId: "d-2", ...other }, { recipientId: "c-3", recipientEmail: "lea@example.com", ...text, body: "Hello third" }];
   const answer = await readOf({ drafts: distinct });
-  assert.deepEqual(answer.draftBundle.draftedEmails, distinct);
+  assert.deepEqual(answer.draftBundle.draftedEmails, distinct.map(withContact));
 });
 
 test("D22 a draft that the review would show under the id __proto__ is refused", async () => {
@@ -399,7 +402,7 @@ test("D23 a bundle whose write-back would edit another list than the one the rev
   }
   // A list after drafts in that order is not the write-back's: the drafts are read.
   const answer = await readOf({ drafts: DRAFTS, confirmedRecipients: [{ email: "ada@example.com" }] });
-  assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS);
+  assert.deepEqual(answer.draftBundle.draftedEmails, DRAFTS.map(withContact));
 });
 
 test("D24 an unexpected failure of the read reaches the caller unchanged", async () => {
@@ -428,7 +431,7 @@ test("D25 a draft whose id is present but empty or not text is refused with its 
   }
   // A null id is no id on either side: the draft is handed on under its recipientId, without the id.
   const answer = await readOf({ drafts: [{ id: null, recipientId: "r-1", ...text }] });
-  assert.deepEqual(answer.draftBundle.draftedEmails, [{ recipientId: "r-1", ...text }]);
+  assert.deepEqual(answer.draftBundle.draftedEmails, [{ recipientId: "r-1", contactId: "r-1", ...text }]);
 });
 
 // The filing step files at most 50 bodies in one call (MAX_MATERIALIZE_LIST_MEMBERS of the platform's
@@ -441,7 +444,7 @@ test("D26 a bundle of more drafts than the filing takes (50) is refused with the
   // Exactly 50 drafts pass, each as saved.
   const answer = await readOf({ drafts: many(50) });
   assert.equal(answer.draftBundle.draftedEmails.length, 50);
-  assert.deepEqual(answer.draftBundle.draftedEmails[49], { id: "d-50", recipientId: "c-50", subject: "Idea 50", body: "Hello 50" });
+  assert.deepEqual(answer.draftBundle.draftedEmails[49], { id: "d-50", recipientId: "c-50", contactId: "c-50", subject: "Idea 50", body: "Hello 50" });
 });
 
 // The filing titles each body by its draft's subject, and the platform refuses a blank title (the check is a trim).
@@ -454,7 +457,7 @@ test("D32 a draft with a blank subject is refused with its position", async () =
   }
   // A subject with text around its spaces is a title, as the platform trims it.
   const padded = { recipientId: "c-6", recipientEmail: "fay@example.com", subject: "  Idea  ", body: "Hello Fay" };
-  assert.deepEqual((await readOf({ drafts: [padded] })).draftBundle.draftedEmails, [padded]);
+  assert.deepEqual((await readOf({ drafts: [padded] })).draftBundle.draftedEmails, [withContact(padded)]);
 });
 
 // The platform stores each body as UTF-8 bytes and refuses two bodies with the same bytes. A person has to change one
@@ -588,7 +591,7 @@ test("B6 the recipients and the drafts' recipient fields are the approved record
     { name: "Ben Ito", email: "ben@example.com", company: "Bento" },
     { name: "Ada Lopez", email: "ada@example.com", company: "Acme" },
   ]);
-  assert.deepEqual(answer.draftBundle.draftedEmails, [{ ...BOUND[1], recipientName: "Ben Ito" }, BOUND[0]]);
+  assert.deepEqual(answer.draftBundle.draftedEmails, [{ ...BOUND[1], recipientName: "Ben Ito" }, BOUND[0]].map(withContact));
   // A name the list gives as first and last name is joined; a company the list gives as company is taken.
   const split = listOf([
     { contactId: "c-1", firstName: "Ada", lastName: "Lopez", email: "ada@example.com", company: "Acme" },
@@ -782,8 +785,8 @@ test("B14 a draft that wrote a padded contact is bound and handed on under exact
   ];
   const answer = await readOf({ drafts }, approved);
   assert.deepEqual(answer.draftBundle.draftedEmails.map((draft) => draft.recipientId), ["c-1", "c-2", "c-3"]);
-  // The output carries the contact in recipientId alone: no padded contactId of the draft survives.
-  for (const draft of answer.draftBundle.draftedEmails) assert.ok(!("contactId" in draft));
+  // The output carries the approved contact, exactly, as contactId too: no padded contactId of the draft survives.
+  assert.deepEqual(answer.draftBundle.draftedEmails.map((draft) => draft.contactId), ["c-1", "c-2", "c-3"]);
 });
 
 test("B15 the recipient fields of a bound draft are exactly the approved record's, whatever the draft wrote", async () => {
@@ -801,10 +804,10 @@ test("B15 the recipient fields of a bound draft are exactly the approved record'
   const answer = await readOf({ drafts }, approved);
   assert.deepEqual(answer.draftBundle.draftedEmails, [
     {
-      id: "d-1", recipientId: "c-1", recipientName: "Ada Lopez", recipientEmail: "Ada@Example.com", recipientCompany: "Acme",
+      id: "d-1", recipientId: "c-1", contactId: "c-1", recipientName: "Ada Lopez", recipientEmail: "Ada@Example.com", recipientCompany: "Acme",
       subject: " Kept subject ", body: "Kept  body\n", status: "draft", followUpDay: 3,
     },
-    { id: "d-2", recipientId: "c-2", recipientName: "Ben Ito", recipientEmail: "ben@example.com", recipientCompany: "Bento", subject: "Two", body: "Two body", status: "reviewed" },
+    { id: "d-2", recipientId: "c-2", contactId: "c-2", recipientName: "Ben Ito", recipientEmail: "ben@example.com", recipientCompany: "Bento", subject: "Two", body: "Two body", status: "reviewed" },
   ]);
   assert.deepEqual(answer.recipients, [
     { name: "Ada Lopez", email: "Ada@Example.com", company: "Acme" },
@@ -848,7 +851,7 @@ test("D30 drafts for contacts without an email address are handed on under their
     { recipientId: "c-3", recipientName: "Cy", recipientEmail: "", ...text, body: "Hello Cy" },
   ];
   const answer = await readOf({ drafts });
-  assert.deepEqual(answer.draftBundle.draftedEmails, drafts);
+  assert.deepEqual(answer.draftBundle.draftedEmails, drafts.map(withContact));
   // Without the recipientId, a draft with an empty email still names no recipient.
   await assert.rejects(
     readOf({ drafts: [drafts[0], { recipientName: "Ben", recipientEmail: "", ...text, body: "Hello Ben" }] }),
